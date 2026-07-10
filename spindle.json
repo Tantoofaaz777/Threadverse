@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "name": "Threadverse",
+  "identifier": "threadverse",
+  "author": "Tantoofaaz777",
+  "github": "https://github.com/Tantoofaaz777/Threadverse",
+  "homepage": "https://github.com/Tantoofaaz777/Threadverse",
+  "description": "Turn selected roleplay scenes into a fictional fandom discussion feed without adding messages to the roleplay chat.",
+  "permissions": ["generation", "chats", "chat_mutation"],
+  "entry_backend": "dist/backend.js",
+  "entry_frontend": "dist/frontend.js",
+  "minimum_lumiverse_version": "1.0.6"
+}
