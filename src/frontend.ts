@@ -231,6 +231,13 @@ const STYLES = `
     border-color: var(--lumiverse-accent);
   }
 
+  .threadverse-button--danger,
+  .threadverse-button--danger:hover {
+    border-color: var(--lumiverse-danger, #ef4444);
+    background: transparent;
+    color: var(--lumiverse-danger, #ef4444);
+  }
+
   .threadverse-message-list {
     display: flex;
     flex-direction: column;
@@ -593,7 +600,7 @@ export function setup(ctx: SpindleFrontendContext) {
           <div class="threadverse-preset-row">
             <div data-setting="instruction-preset"></div>
             <button class="threadverse-button threadverse-button--compact" type="button" data-action="new-instruction-preset">New</button>
-            <button class="threadverse-button threadverse-button--compact" type="button" data-action="delete-instruction-preset">Delete</button>
+            <button class="threadverse-button threadverse-button--compact threadverse-button--danger" type="button" data-action="delete-instruction-preset">Delete</button>
           </div>
           <div class="threadverse-settings-field">
             <div class="threadverse-expandable-textarea">
@@ -1121,7 +1128,7 @@ export function setup(ctx: SpindleFrontendContext) {
     regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
-    deleteButton.className = 'threadverse-button'
+    deleteButton.className = 'threadverse-button threadverse-button--danger'
     deleteButton.dataset.action = 'delete-round'
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending
