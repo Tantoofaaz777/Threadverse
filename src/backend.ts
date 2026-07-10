@@ -74,12 +74,8 @@ async function sendSettingsState(
 
   if (!selectedConnection) {
     settings.connectionId = null
-    settings.model = ''
   } else if (!connections.some((connection) => connection.id === settings.connectionId)) {
     settings.connectionId = selectedConnection.id
-    settings.model = selectedConnection.model
-  } else if (!settings.model.trim()) {
-    settings.model = selectedConnection.model
   }
 
   send({
@@ -112,6 +108,17 @@ function requireNumber(
   return value
 }
 
+function optionalNumber(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): number | null {
+  if (value === null || value === undefined || value === '') return null
+  return requireNumber(value, label, minimum, maximum, integer)
+}
+
 async function saveSettings(value: unknown, userId: string): Promise<void> {
   if (!value || typeof value !== 'object') throw new Error('Invalid settings payload.')
   if (!spindle.permissions.has('generation')) {
@@ -123,15 +130,11 @@ async function saveSettings(value: unknown, userId: string): Promise<void> {
   const connection = connections.find((candidate) => candidate.id === input.connectionId)
   if (!connection) throw new Error('Choose an available Lumiverse connection.')
 
-  const model = typeof input.model === 'string' ? input.model.trim() : ''
-  if (!model) throw new Error('Choose or enter a model for the selected connection.')
-
   const settings: ThreadverseSettingsPayload = {
     connectionId: connection.id,
-    model,
-    maxOutputTokens: requireNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
-    temperature: requireNumber(input.temperature, 'Temperature', 0, 5),
-    topP: requireNumber(input.topP, 'Top P', 0, 1),
+    maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
+    temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
+    topP: optionalNumber(input.topP, 'Top P', 0, 1),
     previousRangeLimit: requireNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
     fandomThreadLimit: requireNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
     maintainFandomContinuity: Boolean(input.maintainFandomContinuity),

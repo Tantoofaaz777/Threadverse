@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   emptyStore,
   normalizeStore,
+  resolveSamplers,
   selectPreviousRounds,
   type StoredRound,
 } from './state'
@@ -51,6 +52,18 @@ describe('Threadverse continuity', () => {
     expect(store.settings.temperature).toBe(0.75)
     expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
     expect(store.settings.instructions).toBe(DEFAULT_SETTINGS.instructions)
+  })
+
+  test('uses sampler hints when optional sampler fields are empty', () => {
+    const store = emptyStore()
+    expect(resolveSamplers(store.settings)).toEqual({
+      maxOutputTokens: 4096,
+      temperature: 1,
+      topP: 1,
+    })
+
+    store.settings.temperature = 0.7
+    expect(resolveSamplers(store.settings).temperature).toBe(0.7)
   })
 
   test('keeps the newest configured ranges in chronological order', () => {

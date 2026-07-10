@@ -11,8 +11,8 @@ This is the initial scaffold. It includes:
 - active-chat message loading and success-themed range selection;
 - per-user, per-chat chronological round persistence;
 - previous/recent context display and continuity reset controls;
-- existing Lumiverse connection and host-managed model selection;
-- independent Max output tokens, Temperature, and Top P sampler overrides;
+- existing Lumiverse connection selection, using the model configured on that connection;
+- optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - persisted continuity limits and editable permanent instructions;
 - a prompt builder for chronological story and fandom continuity;
 - backend/frontend messaging;

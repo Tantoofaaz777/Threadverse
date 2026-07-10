@@ -25,10 +25,9 @@ export interface ThreadverseStore {
 
 export const DEFAULT_SETTINGS: ThreadverseSettings = {
   connectionId: null,
-  model: '',
-  maxOutputTokens: 4096,
-  temperature: 1,
-  topP: 1,
+  maxOutputTokens: null,
+  temperature: null,
+  topP: null,
   previousRangeLimit: 3,
   fandomThreadLimit: 3,
   maintainFandomContinuity: true,
@@ -41,6 +40,26 @@ Create a convincing Reddit-style discussion with a post title, an opening post, 
 
 export const DEFAULT_INSTRUCTIONS = DEFAULT_SETTINGS.instructions
 
+export const DEFAULT_SAMPLERS = {
+  maxOutputTokens: 4096,
+  temperature: 1,
+  topP: 1,
+} as const
+
+export interface ResolvedSamplers {
+  maxOutputTokens: number
+  temperature: number
+  topP: number
+}
+
+export function resolveSamplers(settings: ThreadverseSettings): ResolvedSamplers {
+  return {
+    maxOutputTokens: settings.maxOutputTokens ?? DEFAULT_SAMPLERS.maxOutputTokens,
+    temperature: settings.temperature ?? DEFAULT_SAMPLERS.temperature,
+    topP: settings.topP ?? DEFAULT_SAMPLERS.topP,
+  }
+}
+
 export function emptyStore(): ThreadverseStore {
   return { version: 1, settings: { ...DEFAULT_SETTINGS }, chats: {} }
 }
@@ -51,12 +70,22 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (candidate.version !== 1 || !candidate.chats || typeof candidate.chats !== 'object') {
     return emptyStore()
   }
+  const savedSettings = candidate.settings as Partial<ThreadverseSettings> & { model?: unknown } | undefined
+  const { model: _legacyModel, ...savedWithoutLegacyModel } = savedSettings ?? {}
+  const mergedSettings = {
+    ...DEFAULT_SETTINGS,
+    ...savedWithoutLegacyModel,
+  }
+
+  // Version 0.3.0 stored the effective defaults as explicit values. Convert
+  // those exact values to the new empty/placeholder representation.
+  if (mergedSettings.maxOutputTokens === DEFAULT_SAMPLERS.maxOutputTokens) mergedSettings.maxOutputTokens = null
+  if (mergedSettings.temperature === DEFAULT_SAMPLERS.temperature) mergedSettings.temperature = null
+  if (mergedSettings.topP === DEFAULT_SAMPLERS.topP) mergedSettings.topP = null
+
   return {
     version: 1,
-    settings: {
-      ...DEFAULT_SETTINGS,
-      ...(candidate.settings ?? {}),
-    },
+    settings: mergedSettings,
     chats: candidate.chats,
   }
 }

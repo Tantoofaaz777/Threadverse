@@ -21,10 +21,9 @@ export interface RoundSummary {
 
 export interface ThreadverseSettingsPayload {
   connectionId: string | null
-  model: string
-  maxOutputTokens: number
-  temperature: number
-  topP: number
+  maxOutputTokens: number | null
+  temperature: number | null
+  topP: number | null
   previousRangeLimit: number
   fandomThreadLimit: number
   maintainFandomContinuity: boolean

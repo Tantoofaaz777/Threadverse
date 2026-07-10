@@ -1,6 +1,5 @@
 import type {
   SpindleFrontendContext,
-  SpindleModelComboboxHandle,
   SpindleNumericInputHandle,
   SpindleTextAreaHandle,
 } from 'lumiverse-spindle-types'
@@ -307,21 +306,14 @@ const STYLES = `
     text-align: center;
   }
 
-  .threadverse-settings-card {
+  .threadverse-settings-stack {
     display: grid;
-    gap: 14px;
+    gap: 10px;
   }
 
   .threadverse-settings-section {
     display: grid;
     gap: 10px;
-    padding-top: 12px;
-    border-top: 1px solid var(--lumiverse-border);
-  }
-
-  .threadverse-settings-section:first-of-type {
-    padding-top: 0;
-    border-top: 0;
   }
 
   .threadverse-settings-grid {
@@ -439,22 +431,17 @@ export function setup(ctx: SpindleFrontendContext) {
     </section>
 
     <section class="threadverse-panel" data-panel="settings" hidden>
-      <div class="threadverse-card threadverse-settings-card">
-        <h2 class="threadverse-eyebrow">Settings</h2>
-        <section class="threadverse-settings-section">
+      <div class="threadverse-settings-stack">
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Model</h3>
           <div class="threadverse-settings-field">
             <span class="threadverse-settings-label">Lumiverse connection</span>
             <div data-setting="connection"></div>
           </div>
-          <div class="threadverse-settings-field">
-            <span class="threadverse-settings-label">Model</span>
-            <div data-setting="model"></div>
-          </div>
-          <p class="threadverse-settings-hint">Threadverse uses an existing Lumiverse connection and never stores API keys.</p>
+          <p class="threadverse-settings-hint">The connection supplies its configured model, provider, endpoint, and credentials.</p>
         </section>
 
-        <section class="threadverse-settings-section">
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Samplers</h3>
           <div class="threadverse-settings-grid">
             <label class="threadverse-settings-field threadverse-settings-field--wide">
@@ -470,10 +457,10 @@ export function setup(ctx: SpindleFrontendContext) {
               <div data-setting="top-p"></div>
             </label>
           </div>
-          <p class="threadverse-settings-hint">These values override the selected connection's sampler settings for every Threadverse generation.</p>
+          <p class="threadverse-settings-hint">Leave a field empty to use its displayed default. Threadverse sends these samplers independently of the connection settings.</p>
         </section>
 
-        <section class="threadverse-settings-section">
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Continuity</h3>
           <div class="threadverse-settings-grid">
             <label class="threadverse-settings-field">
@@ -491,19 +478,18 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
         </section>
 
-        <section class="threadverse-settings-section">
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Instructions</h3>
           <div class="threadverse-settings-field">
             <div data-setting="instructions"></div>
           </div>
           <p class="threadverse-settings-hint">The context section headers are assembled by Threadverse. This prompt controls the fandom's behavior and output.</p>
+          <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
+          <div class="threadverse-settings-actions">
+            <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
+            <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-settings" disabled>Save Settings</button>
+          </div>
         </section>
-
-        <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
-        <div class="threadverse-settings-actions">
-          <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
-          <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-settings" disabled>Save Settings</button>
-        </div>
       </div>
     </section>
   `
@@ -568,10 +554,8 @@ export function setup(ctx: SpindleFrontendContext) {
   ): void {
     destroySettingsComponents()
     settingsDraft = { ...settings }
-    let modelHandle: SpindleModelComboboxHandle | null = null
     let fandomThreadsHandle: SpindleNumericInputHandle | null = null
 
-    const selectedConnection = connections.find((connection) => connection.id === settingsDraft!.connectionId)
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
@@ -587,56 +571,43 @@ export function setup(ctx: SpindleFrontendContext) {
         if (!settingsDraft) return
         const connection = connections.find((candidate) => candidate.id === connectionId)
         settingsDraft.connectionId = connection?.id ?? null
-        settingsDraft.model = connection?.model ?? ''
-        modelHandle?.update({
-          value: settingsDraft.model,
-          connection: { kind: 'llm', id: connection?.id },
-          disabled: !connection,
-        })
-        modelHandle?.refresh()
-      },
-    })
-
-    modelHandle = ctx.components.mountModelCombobox(settingTarget('model'), {
-      value: settingsDraft.model || selectedConnection?.model || '',
-      connection: { kind: 'llm', id: selectedConnection?.id },
-      appearance: 'standard',
-      placeholder: 'Choose or enter a model',
-      emptyMessage: 'No models are available for this connection.',
-      disabled: !selectedConnection,
-      onChange: (model) => {
-        if (settingsDraft) settingsDraft.model = model
       },
     })
 
     const maxTokensHandle = ctx.components.mountNumericInput(settingTarget('max-output-tokens'), {
       value: settingsDraft.maxOutputTokens,
+      allowEmpty: true,
+      placeholder: '4096',
       min: 1,
       max: 200000,
       step: 1,
       integer: true,
       onChange: (value) => {
-        if (settingsDraft && value !== null) settingsDraft.maxOutputTokens = value
+        if (settingsDraft) settingsDraft.maxOutputTokens = value
       },
     })
 
     const temperatureHandle = ctx.components.mountNumericInput(settingTarget('temperature'), {
       value: settingsDraft.temperature,
+      allowEmpty: true,
+      placeholder: '1',
       min: 0,
       max: 5,
       step: 0.05,
       onChange: (value) => {
-        if (settingsDraft && value !== null) settingsDraft.temperature = value
+        if (settingsDraft) settingsDraft.temperature = value
       },
     })
 
     const topPHandle = ctx.components.mountNumericInput(settingTarget('top-p'), {
       value: settingsDraft.topP,
+      allowEmpty: true,
+      placeholder: '1',
       min: 0,
       max: 1,
       step: 0.05,
       onChange: (value) => {
-        if (settingsDraft && value !== null) settingsDraft.topP = value
+        if (settingsDraft) settingsDraft.topP = value
       },
     })
 
@@ -685,7 +656,6 @@ export function setup(ctx: SpindleFrontendContext) {
 
     settingsComponents = [
       connectionHandle,
-      modelHandle,
       maxTokensHandle,
       temperatureHandle,
       topPHandle,
