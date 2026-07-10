@@ -22,11 +22,12 @@ The extension currently includes:
 - cancellable generation with atomic round persistence;
 - tolerant validation of the model's JSON feed response;
 - feed regeneration that replaces the existing result without duplicating its round;
-- a temporary JSON feed preview ahead of the Reddit-inspired renderer;
+- a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
+- a newest-first round selector, lightweight CSS avatars, nested replies, and collapsible comment trees;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
 
-The final Reddit-inspired feed renderer is planned for stage 4B. The current Feed tab intentionally shows the validated JSON so the generation contract can be tested first.
+The Feed tab renders the newest round by default and keeps older rounds available through a compact selector.
 
 ## Development
 
