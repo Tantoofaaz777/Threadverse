@@ -227,6 +227,21 @@ async function runGeneration(store: ThreadverseStore, chatId: string, recent: Ch
   }
 }
 
+async function finishSuccessfulGeneration(
+  chatId: string,
+  roundId: string,
+  notice: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await sendActiveChat(userId, { notice }, chatId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown refresh error.'
+    spindle.log.error(`[Threadverse] Round saved, but the frontend refresh failed: ${message}`)
+  }
+  send({ type: 'threadverse:generation_state', status: 'completed', chatId, roundId }, userId)
+}
+
 async function selectMessages(chatId: string, startId: string, endId: string, userId: string) {
   if (!hasChatPermissions()) throw new Error('Grant the Chats and Chat Mutation permissions before generating.')
   const chat = await spindle.chats.getActive(userId)
@@ -262,10 +277,12 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
     await saveStore(latest, userId)
   })
-  send({ type: 'threadverse:generation_state', status: 'completed', chatId: selection.chat.id, roundId: round.id }, userId)
-  await sendActiveChat(userId, {
-    notice: `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
-  }, selection.chat.id)
+  await finishSuccessfulGeneration(
+    selection.chat.id,
+    round.id,
+    `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
+    userId,
+  )
 }
 
 async function regenerateThread(chatId: string, roundId: string, userId: string): Promise<void> {
@@ -281,8 +298,7 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
     if (!target) throw new Error('That continuity round was removed while generation was running.')
     target.feed = feed; await saveStore(latest, userId)
   })
-  send({ type: 'threadverse:generation_state', status: 'completed', chatId, roundId }, userId)
-  await sendActiveChat(userId, { notice: `Round ${round.sequence} regenerated.` }, chatId)
+  await finishSuccessfulGeneration(chatId, roundId, `Round ${round.sequence} regenerated.`, userId)
 }
 
 async function deleteRound(chatId: string, roundId: string, userId: string): Promise<void> {

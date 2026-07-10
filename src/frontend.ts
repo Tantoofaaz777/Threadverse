@@ -1428,7 +1428,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (shouldOpenCompletedFeed) switchTab('feed')
       }
       renderContinuity()
-      if (message.status !== 'completed' || !shouldOpenCompletedFeed) renderFeed()
+      renderFeed()
       if (!generationPending) generationChatId = null
       return
     }
