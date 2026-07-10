@@ -1,9 +1,16 @@
-import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
+import type {
+  SpindleFrontendContext,
+  SpindleModelComboboxHandle,
+  SpindleNumericInputHandle,
+  SpindleTextAreaHandle,
+} from 'lumiverse-spindle-types'
 import type {
   BackendToFrontendMessage,
   ChatMessageSummary,
+  ConnectionSummary,
   FrontendToBackendMessage,
   RoundSummary,
+  ThreadverseSettingsPayload,
   ThreadverseTab,
 } from './shared'
 import { toggleRangeEndpoint } from './range-selection'
@@ -300,8 +307,71 @@ const STYLES = `
     text-align: center;
   }
 
-  .threadverse-setting + .threadverse-setting { margin-top: 12px; }
-  .threadverse-setting strong { display: block; margin-bottom: 3px; font-size: 12px; }
+  .threadverse-settings-card {
+    display: grid;
+    gap: 14px;
+  }
+
+  .threadverse-settings-section {
+    display: grid;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--lumiverse-border);
+  }
+
+  .threadverse-settings-section:first-of-type {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .threadverse-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .threadverse-settings-field {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .threadverse-settings-field--wide { grid-column: 1 / -1; }
+
+  .threadverse-settings-label {
+    color: var(--lumiverse-text);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .threadverse-settings-hint {
+    margin: 0;
+    color: var(--lumiverse-text-muted);
+    font-size: 9px;
+    line-height: 1.35;
+  }
+
+  .threadverse-switch-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 30px;
+  }
+
+  .threadverse-settings-status {
+    min-height: 15px;
+    color: var(--lumiverse-success, #22c55e);
+    font-size: 10px;
+  }
+
+  .threadverse-settings-status.is-error { color: var(--lumiverse-danger, #ef4444); }
+
+  .threadverse-settings-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
 `
 
 export function setup(ctx: SpindleFrontendContext) {
@@ -369,19 +439,70 @@ export function setup(ctx: SpindleFrontendContext) {
     </section>
 
     <section class="threadverse-panel" data-panel="settings" hidden>
-      <div class="threadverse-card">
+      <div class="threadverse-card threadverse-settings-card">
         <h2 class="threadverse-eyebrow">Settings</h2>
-        <div class="threadverse-setting">
-          <strong>Model and parameters</strong>
-          <p class="threadverse-copy">Connection, model, temperature, and output controls will live here.</p>
-        </div>
-        <div class="threadverse-setting">
-          <strong>Continuity</strong>
-          <p class="threadverse-copy">Configure how many chronological story ranges and fandom threads are retained.</p>
-        </div>
-        <div class="threadverse-setting">
-          <strong>Instructions</strong>
-          <p class="threadverse-copy">Edit the permanent fandom-simulator prompt and formatting rules.</p>
+        <section class="threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Model</h3>
+          <div class="threadverse-settings-field">
+            <span class="threadverse-settings-label">Lumiverse connection</span>
+            <div data-setting="connection"></div>
+          </div>
+          <div class="threadverse-settings-field">
+            <span class="threadverse-settings-label">Model</span>
+            <div data-setting="model"></div>
+          </div>
+          <p class="threadverse-settings-hint">Threadverse uses an existing Lumiverse connection and never stores API keys.</p>
+        </section>
+
+        <section class="threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Samplers</h3>
+          <div class="threadverse-settings-grid">
+            <label class="threadverse-settings-field threadverse-settings-field--wide">
+              <span class="threadverse-settings-label">Max output tokens</span>
+              <div data-setting="max-output-tokens"></div>
+            </label>
+            <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Temperature</span>
+              <div data-setting="temperature"></div>
+            </label>
+            <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Top P</span>
+              <div data-setting="top-p"></div>
+            </label>
+          </div>
+          <p class="threadverse-settings-hint">These values override the selected connection's sampler settings for every Threadverse generation.</p>
+        </section>
+
+        <section class="threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Continuity</h3>
+          <div class="threadverse-settings-grid">
+            <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Previous story ranges</span>
+              <div data-setting="previous-ranges"></div>
+            </label>
+            <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Previous fandom threads</span>
+              <div data-setting="fandom-threads"></div>
+            </label>
+            <div class="threadverse-settings-field threadverse-settings-field--wide threadverse-switch-field">
+              <span class="threadverse-settings-label">Maintain fandom continuity</span>
+              <div data-setting="maintain-fandom"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Instructions</h3>
+          <div class="threadverse-settings-field">
+            <div data-setting="instructions"></div>
+          </div>
+          <p class="threadverse-settings-hint">The context section headers are assembled by Threadverse. This prompt controls the fandom's behavior and output.</p>
+        </section>
+
+        <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
+        <div class="threadverse-settings-actions">
+          <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
+          <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-settings" disabled>Save Settings</button>
         </div>
       </div>
     </section>
@@ -399,6 +520,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
+  const settingsStatus = shell.querySelector<HTMLElement>('[data-settings-status]')!
+  const saveSettingsButton = shell.querySelector<HTMLButtonElement>('[data-action="save-settings"]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -407,6 +530,10 @@ export function setup(ctx: SpindleFrontendContext) {
   let startIndex: number | null = null
   let endIndex: number | null = null
   let operationPending = false
+  let settingsDraft: ThreadverseSettingsPayload | null = null
+  let defaultInstructions = ''
+  let instructionsHandle: SpindleTextAreaHandle | null = null
+  let settingsComponents: Array<{ destroy(): void }> = []
 
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
 
@@ -420,10 +547,179 @@ export function setup(ctx: SpindleFrontendContext) {
     contextError.hidden = false
   }
 
+  function settingTarget(name: string): HTMLElement {
+    return shell.querySelector<HTMLElement>(`[data-setting="${name}"]`)!
+  }
+
+  function setSettingsStatus(message: string, error = false): void {
+    settingsStatus.textContent = message
+    settingsStatus.classList.toggle('is-error', error)
+  }
+
+  function destroySettingsComponents(): void {
+    for (const component of settingsComponents) component.destroy()
+    settingsComponents = []
+    instructionsHandle = null
+  }
+
+  function mountSettingsForm(
+    settings: ThreadverseSettingsPayload,
+    connections: ConnectionSummary[],
+  ): void {
+    destroySettingsComponents()
+    settingsDraft = { ...settings }
+    let modelHandle: SpindleModelComboboxHandle | null = null
+    let fandomThreadsHandle: SpindleNumericInputHandle | null = null
+
+    const selectedConnection = connections.find((connection) => connection.id === settingsDraft!.connectionId)
+    const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
+      value: settingsDraft.connectionId ?? '',
+      placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
+      searchPlaceholder: 'Search connections...',
+      emptyMessage: 'No Lumiverse LLM connections are available.',
+      disabled: connections.length === 0,
+      options: connections.map((connection) => ({
+        value: connection.id,
+        label: connection.name,
+        sublabel: `${connection.provider} · ${connection.model || 'No default model'}`,
+      })),
+      onChange: (connectionId) => {
+        if (!settingsDraft) return
+        const connection = connections.find((candidate) => candidate.id === connectionId)
+        settingsDraft.connectionId = connection?.id ?? null
+        settingsDraft.model = connection?.model ?? ''
+        modelHandle?.update({
+          value: settingsDraft.model,
+          connection: { kind: 'llm', id: connection?.id },
+          disabled: !connection,
+        })
+        modelHandle?.refresh()
+      },
+    })
+
+    modelHandle = ctx.components.mountModelCombobox(settingTarget('model'), {
+      value: settingsDraft.model || selectedConnection?.model || '',
+      connection: { kind: 'llm', id: selectedConnection?.id },
+      appearance: 'standard',
+      placeholder: 'Choose or enter a model',
+      emptyMessage: 'No models are available for this connection.',
+      disabled: !selectedConnection,
+      onChange: (model) => {
+        if (settingsDraft) settingsDraft.model = model
+      },
+    })
+
+    const maxTokensHandle = ctx.components.mountNumericInput(settingTarget('max-output-tokens'), {
+      value: settingsDraft.maxOutputTokens,
+      min: 1,
+      max: 200000,
+      step: 1,
+      integer: true,
+      onChange: (value) => {
+        if (settingsDraft && value !== null) settingsDraft.maxOutputTokens = value
+      },
+    })
+
+    const temperatureHandle = ctx.components.mountNumericInput(settingTarget('temperature'), {
+      value: settingsDraft.temperature,
+      min: 0,
+      max: 5,
+      step: 0.05,
+      onChange: (value) => {
+        if (settingsDraft && value !== null) settingsDraft.temperature = value
+      },
+    })
+
+    const topPHandle = ctx.components.mountNumericInput(settingTarget('top-p'), {
+      value: settingsDraft.topP,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      onChange: (value) => {
+        if (settingsDraft && value !== null) settingsDraft.topP = value
+      },
+    })
+
+    const previousRangesHandle = ctx.components.mountNumericInput(settingTarget('previous-ranges'), {
+      value: settingsDraft.previousRangeLimit,
+      min: 0,
+      max: 50,
+      step: 1,
+      integer: true,
+      onChange: (value) => {
+        if (settingsDraft && value !== null) settingsDraft.previousRangeLimit = value
+      },
+    })
+
+    fandomThreadsHandle = ctx.components.mountNumericInput(settingTarget('fandom-threads'), {
+      value: settingsDraft.fandomThreadLimit,
+      min: 0,
+      max: 50,
+      step: 1,
+      integer: true,
+      disabled: !settingsDraft.maintainFandomContinuity,
+      onChange: (value) => {
+        if (settingsDraft && value !== null) settingsDraft.fandomThreadLimit = value
+      },
+    })
+
+    const fandomSwitchHandle = ctx.components.mountSwitch(settingTarget('maintain-fandom'), {
+      checked: settingsDraft.maintainFandomContinuity,
+      size: 'sm',
+      ariaLabel: 'Maintain fandom continuity',
+      onChange: (checked) => {
+        if (!settingsDraft) return
+        settingsDraft.maintainFandomContinuity = checked
+        fandomThreadsHandle?.update({ disabled: !checked })
+      },
+    })
+
+    instructionsHandle = ctx.components.mountTextArea(settingTarget('instructions'), {
+      value: settingsDraft.instructions,
+      rows: 14,
+      ariaLabel: 'Permanent Threadverse instructions',
+      onChange: (instructions) => {
+        if (settingsDraft) settingsDraft.instructions = instructions
+      },
+    })
+
+    settingsComponents = [
+      connectionHandle,
+      modelHandle,
+      maxTokensHandle,
+      temperatureHandle,
+      topPHandle,
+      previousRangesHandle,
+      fandomThreadsHandle,
+      fandomSwitchHandle,
+      instructionsHandle,
+    ]
+    saveSettingsButton.disabled = connections.length === 0
+  }
+
+  function saveSettings(): void {
+    if (!settingsDraft || operationPending) return
+    operationPending = true
+    saveSettingsButton.disabled = true
+    setSettingsStatus('Saving settings...')
+    send({ type: 'threadverse:save_settings', settings: { ...settingsDraft } })
+  }
+
+  function resetInstructions(): void {
+    if (!settingsDraft || !instructionsHandle) return
+    settingsDraft.instructions = defaultInstructions
+    instructionsHandle.update({ value: defaultInstructions })
+    setSettingsStatus('Default prompt restored. Save settings to keep it.')
+  }
+
   function switchTab(next: ThreadverseTab): void {
     activeTab = next
     for (const tab of tabs) tab.classList.toggle('is-active', tab.dataset.tab === activeTab)
     for (const panel of panels) panel.hidden = panel.dataset.panel !== activeTab
+    if (next === 'settings') {
+      setSettingsStatus('Loading settings...')
+      send({ type: 'threadverse:load_settings' })
+    }
   }
 
   function selectedBounds(): [number, number] | null {
@@ -604,6 +900,8 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'clear') clearSelection()
     if (action === 'save') saveSelectedRange()
     if (action === 'reset') resetContinuity()
+    if (action === 'save-settings') saveSettings()
+    if (action === 'reset-instructions') resetInstructions()
   }
 
   shell.addEventListener('click', onClick)
@@ -614,8 +912,21 @@ export function setup(ctx: SpindleFrontendContext) {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:operation_error') {
       operationPending = false
-      showError(message.error)
+      if (activeTab === 'settings') {
+        saveSettingsButton.disabled = false
+        setSettingsStatus(message.error, true)
+      } else {
+        showError(message.error)
+      }
       renderContinuity()
+      return
+    }
+
+    if (message.type === 'threadverse:settings_state') {
+      operationPending = false
+      defaultInstructions = message.defaultInstructions
+      mountSettingsForm(message.settings, message.connections)
+      setSettingsStatus(message.error ?? message.notice ?? '', Boolean(message.error))
       return
     }
 
@@ -643,6 +954,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const unsubscribeActivate = drawer.onActivate(loadActiveChat)
   send({ type: 'threadverse:get_status' })
+  send({ type: 'threadverse:load_settings' })
   loadActiveChat()
 
   return () => {
@@ -651,6 +963,7 @@ export function setup(ctx: SpindleFrontendContext) {
     shell.removeEventListener('click', onClick)
     search.removeEventListener('input', renderMessages)
     unusedOnly.removeEventListener('change', renderMessages)
+    destroySettingsComponents()
     drawer.destroy()
     removeStyle()
     ctx.dom.cleanup()

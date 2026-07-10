@@ -2,8 +2,11 @@ import {
   isFrontendMessage,
   type BackendToFrontendMessage,
   type ChatMessageSummary,
+  type ConnectionSummary,
+  type ThreadverseSettingsPayload,
 } from './shared'
 import {
+  DEFAULT_INSTRUCTIONS,
   emptyStore,
   normalizeStore,
   summarizeRounds,
@@ -33,6 +36,112 @@ async function saveStore(store: ThreadverseStore, userId: string): Promise<void>
 
 function hasChatPermissions(): boolean {
   return spindle.permissions.has('chats') && spindle.permissions.has('chat_mutation')
+}
+
+function toConnectionSummary(connection: {
+  id: string
+  name: string
+  provider: string
+  model: string
+  is_default: boolean
+}): ConnectionSummary {
+  return {
+    id: connection.id,
+    name: connection.name,
+    provider: connection.provider,
+    model: connection.model,
+    isDefault: connection.is_default,
+  }
+}
+
+async function getConnections(userId: string): Promise<ConnectionSummary[]> {
+  if (!spindle.permissions.has('generation')) return []
+  return (await spindle.connections.list(userId)).map(toConnectionSummary)
+}
+
+async function sendSettingsState(
+  userId: string,
+  options?: { notice?: string; error?: string },
+): Promise<void> {
+  const [store, connections] = await Promise.all([
+    loadStore(userId),
+    getConnections(userId),
+  ])
+  const settings = { ...store.settings }
+  const selectedConnection = connections.find((connection) => connection.id === settings.connectionId)
+    ?? connections.find((connection) => connection.isDefault)
+    ?? connections[0]
+
+  if (!selectedConnection) {
+    settings.connectionId = null
+    settings.model = ''
+  } else if (!connections.some((connection) => connection.id === settings.connectionId)) {
+    settings.connectionId = selectedConnection.id
+    settings.model = selectedConnection.model
+  } else if (!settings.model.trim()) {
+    settings.model = selectedConnection.model
+  }
+
+  send({
+    type: 'threadverse:settings_state',
+    settings,
+    defaultInstructions: DEFAULT_INSTRUCTIONS,
+    connections,
+    notice: options?.notice,
+    error: options?.error ?? (!spindle.permissions.has('generation')
+      ? 'Grant the Generation permission to choose a Lumiverse connection and model.'
+      : connections.length === 0
+        ? 'No Lumiverse LLM connections are available.'
+        : undefined),
+  }, userId)
+}
+
+function requireNumber(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a number.`)
+  }
+  if (value < minimum || value > maximum || (integer && !Number.isInteger(value))) {
+    throw new Error(`${label} must be between ${minimum} and ${maximum}${integer ? ' and use a whole number' : ''}.`)
+  }
+  return value
+}
+
+async function saveSettings(value: unknown, userId: string): Promise<void> {
+  if (!value || typeof value !== 'object') throw new Error('Invalid settings payload.')
+  if (!spindle.permissions.has('generation')) {
+    throw new Error('Grant the Generation permission before saving model settings.')
+  }
+
+  const input = value as Partial<ThreadverseSettingsPayload>
+  const connections = await getConnections(userId)
+  const connection = connections.find((candidate) => candidate.id === input.connectionId)
+  if (!connection) throw new Error('Choose an available Lumiverse connection.')
+
+  const model = typeof input.model === 'string' ? input.model.trim() : ''
+  if (!model) throw new Error('Choose or enter a model for the selected connection.')
+
+  const settings: ThreadverseSettingsPayload = {
+    connectionId: connection.id,
+    model,
+    maxOutputTokens: requireNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
+    temperature: requireNumber(input.temperature, 'Temperature', 0, 5),
+    topP: requireNumber(input.topP, 'Top P', 0, 1),
+    previousRangeLimit: requireNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
+    fandomThreadLimit: requireNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
+    maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
+    instructions: typeof input.instructions === 'string' ? input.instructions : '',
+  }
+
+  const store = await loadStore(userId)
+  store.settings = settings
+  await saveStore(store, userId)
+  await sendSettingsState(userId, { notice: 'Settings saved.' })
 }
 
 async function sendActiveChat(userId: string, options?: { notice?: string; error?: string }): Promise<void> {
@@ -174,6 +283,16 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
 
+    if (payload.type === 'threadverse:load_settings') {
+      await sendSettingsState(userId)
+      return
+    }
+
+    if (payload.type === 'threadverse:save_settings') {
+      await saveSettings(payload.settings, userId)
+      return
+    }
+
     if (payload.type === 'threadverse:save_range') {
       await saveRange(payload, userId)
       return
@@ -183,6 +302,14 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Threadverse could not complete the operation.'
     spindle.log.error(`[Threadverse] ${message}`)
+    if (payload.type === 'threadverse:save_settings' || payload.type === 'threadverse:load_settings') {
+      try {
+        await sendSettingsState(userId, { error: message })
+      } catch {
+        send({ type: 'threadverse:operation_error', error: message }, userId)
+      }
+      return
+    }
     if (payload.type === 'threadverse:save_range' || payload.type === 'threadverse:reset_continuity') {
       send({ type: 'threadverse:operation_error', error: message }, userId)
       return

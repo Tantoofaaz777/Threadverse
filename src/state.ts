@@ -1,4 +1,8 @@
-import type { ChatMessageSummary, RoundSummary } from './shared'
+import type {
+  ChatMessageSummary,
+  RoundSummary,
+  ThreadverseSettingsPayload,
+} from './shared'
 
 export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
@@ -11,11 +15,7 @@ export interface ChatContinuity {
   rounds: StoredRound[]
 }
 
-export interface ThreadverseSettings {
-  previousRangeLimit: number
-  fandomThreadLimit: number
-  maintainFandomContinuity: boolean
-}
+export type ThreadverseSettings = ThreadverseSettingsPayload
 
 export interface ThreadverseStore {
   version: 1
@@ -24,10 +24,22 @@ export interface ThreadverseStore {
 }
 
 export const DEFAULT_SETTINGS: ThreadverseSettings = {
+  connectionId: null,
+  model: '',
+  maxOutputTokens: 4096,
+  temperature: 1,
+  topP: 1,
   previousRangeLimit: 3,
   fandomThreadLimit: 3,
   maintainFandomContinuity: true,
+  instructions: `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
+
+Treat PREVIOUS CONTEXT as events the fandom already knows. Treat RECENT CONTEXT as the new material the current discussion should focus on. Use FANDOM CONTINUITY to preserve recurring usernames, theories, opinions, jokes, and disagreements from earlier threads.
+
+Create a convincing Reddit-style discussion with a post title, an opening post, varied commenters, nested replies, votes, flairs, theories, jokes, criticism, shipping, and genuine disagreement where appropriate. Do not continue or rewrite the story itself. Discuss it as an audience would.`,
 }
+
+export const DEFAULT_INSTRUCTIONS = DEFAULT_SETTINGS.instructions
 
 export function emptyStore(): ThreadverseStore {
   return { version: 1, settings: { ...DEFAULT_SETTINGS }, chats: {} }

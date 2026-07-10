@@ -11,11 +11,14 @@ This is the initial scaffold. It includes:
 - active-chat message loading and success-themed range selection;
 - per-user, per-chat chronological round persistence;
 - previous/recent context display and continuity reset controls;
+- existing Lumiverse connection and host-managed model selection;
+- independent Max output tokens, Temperature, and Top P sampler overrides;
+- persisted continuity limits and editable permanent instructions;
 - a prompt builder for chronological story and fandom continuity;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
 
-LLM generation, editable settings, fandom-thread persistence, and the final Reddit-inspired feed renderer are intentionally not implemented yet. Until generation is connected, **Save Range** advances story continuity for testing.
+LLM generation, fandom-thread persistence, and the final Reddit-inspired feed renderer are intentionally not implemented yet. Until generation is connected, **Save Range** advances story continuity for testing.
 
 ## Development
 

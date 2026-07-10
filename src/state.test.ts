@@ -41,6 +41,18 @@ describe('Threadverse continuity', () => {
     expect(store.settings).toEqual(DEFAULT_SETTINGS)
   })
 
+  test('preserves saved settings while filling newly added defaults', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {},
+      settings: { previousRangeLimit: 8, temperature: 0.75 },
+    })
+    expect(store.settings.previousRangeLimit).toBe(8)
+    expect(store.settings.temperature).toBe(0.75)
+    expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
+    expect(store.settings.instructions).toBe(DEFAULT_SETTINGS.instructions)
+  })
+
   test('keeps the newest configured ranges in chronological order', () => {
     const store = emptyStore()
     store.settings.previousRangeLimit = 3
