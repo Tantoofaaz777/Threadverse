@@ -225,10 +225,11 @@ const STYLES = `
     outline-offset: 2px;
   }
 
-  .threadverse-button--primary {
-    background: var(--lumiverse-accent);
-    color: var(--lumiverse-accent-contrast, white);
-    border-color: var(--lumiverse-accent);
+  .threadverse-button--primary,
+  .threadverse-button--primary:hover {
+    border-color: var(--lumiverse-primary, var(--lumiverse-accent));
+    background: transparent;
+    color: var(--lumiverse-primary, var(--lumiverse-accent));
   }
 
   .threadverse-button--danger,
