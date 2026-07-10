@@ -340,12 +340,27 @@ const STYLES = `
   }
   .threadverse-time { color: var(--lumiverse-text-muted); font-size: 8px; white-space: nowrap; }
   .threadverse-reddit-post .threadverse-reddit-body { margin-top: 10px; }
-  .threadverse-reddit-actions { display: flex; align-items: center; gap: 12px; margin-top: 9px; color: var(--lumiverse-text-muted); font-size: 9px; }
-  .threadverse-score { color: var(--lumiverse-primary, var(--lumiverse-text)); font-weight: 700; }
-  .threadverse-comments { padding: 4px 12px 12px; }
+  .threadverse-reddit-actions { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: var(--lumiverse-text-muted); }
+  .threadverse-action-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 26px; min-height: 26px;
+    padding: 3px 6px; border: 0; border-radius: 999px; background: transparent;
+    color: var(--lumiverse-text-muted); cursor: default; font: inherit; font-size: 9px;
+  }
+  .threadverse-action-icon { font-size: 14px; line-height: 1; }
+  .threadverse-vote-group {
+    display: inline-flex; align-items: center; overflow: hidden; border: 1px solid var(--lumiverse-border);
+    border-radius: 999px; background: var(--lumiverse-fill-subtle);
+  }
+  .threadverse-vote-group .threadverse-action-button { border-radius: 0; padding: 3px 7px; }
+  .threadverse-score { color: var(--lumiverse-text); font-size: 9px; font-weight: 700; }
+  .threadverse-comments { padding: 0; }
   .threadverse-comment {
     position: relative; padding: 10px 0 0 12px; border-left: 2px solid var(--lumiverse-border);
   }
+  .threadverse-comment--root {
+    padding: 12px; border-left: 0; border-bottom: 6px solid var(--lumiverse-bg, #0f0d15);
+  }
+  .threadverse-comment--root:last-child { border-bottom: 0; }
   .threadverse-comment-content { min-width: 0; }
   .threadverse-comment-body { margin-top: 6px; }
   .threadverse-comment-replies { margin-left: 5px; }
@@ -360,9 +375,11 @@ const STYLES = `
   @media (max-width: 420px) {
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
-    .threadverse-comments { padding-left: 8px; padding-right: 8px; }
+    .threadverse-comment--root { padding: 11px 9px; }
     .threadverse-comment { padding-left: 8px; }
+    .threadverse-comment--root { padding-left: 9px; }
     .threadverse-comment-replies { margin-left: 2px; }
+    .threadverse-action-label { display: none; }
   }
 
   .threadverse-settings-stack {
@@ -1012,10 +1029,55 @@ export function setup(ctx: SpindleFrontendContext) {
     return row
   }
 
-  function renderComment(comment: ThreadverseComment, roundId: string, path: string): HTMLElement {
+  function visualAction(icon: string, label: string): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'threadverse-action-button'
+    button.title = label
+    button.setAttribute('aria-label', label)
+    const symbol = document.createElement('span')
+    symbol.className = 'threadverse-action-icon'
+    symbol.setAttribute('aria-hidden', 'true')
+    symbol.textContent = icon
+    button.appendChild(symbol)
+    if (label === 'Reply' || label === 'Share') {
+      const text = document.createElement('span')
+      text.className = 'threadverse-action-label'
+      text.textContent = label
+      button.appendChild(text)
+    }
+    return button
+  }
+
+  function redditActions(score: number, commentCount?: number): HTMLElement {
+    const actions = document.createElement('div')
+    actions.className = 'threadverse-reddit-actions'
+    const votes = document.createElement('div')
+    votes.className = 'threadverse-vote-group'
+    const upvote = visualAction('↑', 'Upvote')
+    const scoreLabel = document.createElement('span')
+    scoreLabel.className = 'threadverse-score'
+    scoreLabel.textContent = String(score)
+    const downvote = visualAction('↓', 'Downvote')
+    votes.append(upvote, scoreLabel, downvote)
+    actions.appendChild(votes)
+    if (commentCount !== undefined) {
+      const comments = visualAction('◯', `${commentCount} comments`)
+      const text = comments.querySelector('.threadverse-action-icon')!
+      text.textContent = `◯ ${commentCount}`
+      actions.appendChild(comments)
+    } else {
+      actions.appendChild(visualAction('↩', 'Reply'))
+    }
+    actions.append(visualAction('↗', 'Share'), visualAction('⋮', 'More options'))
+    return actions
+  }
+
+  function renderComment(comment: ThreadverseComment, roundId: string, path: string, depth: number): HTMLElement {
     const collapseId = `${roundId}:${path}:${comment.id}`
     const element = document.createElement('article')
     element.className = 'threadverse-comment'
+    if (depth === 0) element.classList.add('threadverse-comment--root')
     if (collapsedComments.has(collapseId)) element.classList.add('is-collapsed')
     const content = document.createElement('div')
     content.className = 'threadverse-comment-content'
@@ -1023,15 +1085,12 @@ export function setup(ctx: SpindleFrontendContext) {
     const body = document.createElement('p')
     body.className = 'threadverse-comment-body'
     body.textContent = comment.body
-    const actions = document.createElement('div')
-    actions.className = 'threadverse-reddit-actions'
-    actions.innerHTML = `<span class="threadverse-score">▲ ${comment.score}</span><span>Reply</span><span>Share</span>`
-    content.append(body, actions)
+    content.append(body, redditActions(comment.score))
     element.appendChild(content)
     if (comment.replies.length > 0) {
       const replies = document.createElement('div')
       replies.className = 'threadverse-comment-replies'
-      comment.replies.forEach((reply, index) => replies.appendChild(renderComment(reply, roundId, `${path}.${index}`)))
+      comment.replies.forEach((reply, index) => replies.appendChild(renderComment(reply, roundId, `${path}.${index}`, depth + 1)))
       element.appendChild(replies)
     }
     return element
@@ -1115,13 +1174,10 @@ export function setup(ctx: SpindleFrontendContext) {
     title.className = 'threadverse-reddit-title'; title.textContent = feed.title
     const body = document.createElement('p')
     body.className = 'threadverse-reddit-body'; body.textContent = feed.post.body
-    const actions = document.createElement('div')
-    actions.className = 'threadverse-reddit-actions'
-    actions.innerHTML = `<span class="threadverse-score">▲ ${feed.post.score}</span><span>${totalComments(feed.comments)} comments</span><span>Share</span>`
-    post.append(title, body, actions)
+    post.append(title, body, redditActions(feed.post.score, totalComments(feed.comments)))
     const comments = document.createElement('section')
     comments.className = 'threadverse-comments'
-    feed.comments.forEach((comment, index) => comments.appendChild(renderComment(comment, round.id, String(index))))
+    feed.comments.forEach((comment, index) => comments.appendChild(renderComment(comment, round.id, String(index), 0)))
     card.append(community, post, comments)
     feedList.appendChild(card)
   }
