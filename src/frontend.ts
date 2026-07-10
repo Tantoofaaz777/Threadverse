@@ -56,9 +56,9 @@ const STYLES = `
   .threadverse-tab:hover { color: var(--lumiverse-text); }
 
   .threadverse-tab.is-active {
-    color: var(--lumiverse-text);
-    background: var(--lumiverse-fill-subtle);
-    box-shadow: inset 0 0 0 1px var(--lumiverse-border);
+    color: var(--lumiverse-primary-text, var(--lumiverse-text));
+    background: var(--lumiverse-primary-020, rgba(147, 112, 219, .2));
+    box-shadow: inset 0 0 0 1px var(--lumiverse-primary-050, rgba(147, 112, 219, .5));
   }
 
   .threadverse-panel[hidden] { display: none; }
@@ -145,7 +145,7 @@ const STYLES = `
 
   .threadverse-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
     margin: 10px 0;
   }
@@ -464,7 +464,6 @@ export function setup(ctx: SpindleFrontendContext) {
             <span class="threadverse-switch-track" aria-hidden="true"></span>
             <span>Unused only</span>
           </label>
-          <button class="threadverse-button" type="button" data-action="refresh">Refresh</button>
         </div>
         <div class="threadverse-message-list">
           <div class="threadverse-empty" data-message-state>Loading the active chat...</div>
@@ -578,6 +577,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let operationPending = false
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
   let defaultInstructions = ''
@@ -1000,6 +1000,21 @@ export function setup(ctx: SpindleFrontendContext) {
     send({ type: 'threadverse:load_active_chat' })
   }
 
+  function scheduleChatRefresh(): void {
+    if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
+    chatRefreshTimer = setTimeout(() => {
+      chatRefreshTimer = null
+      send({ type: 'threadverse:load_active_chat' })
+    }, 120)
+  }
+
+  function scheduleActiveChatRefresh(payload: unknown): void {
+    const chatId = payload && typeof payload === 'object'
+      ? (payload as { chatId?: unknown }).chatId
+      : undefined
+    if (!activeChat || chatId === activeChat.id) scheduleChatRefresh()
+  }
+
   function saveSelectedRange(): void {
     const bounds = selectedBounds()
     if (!bounds || !activeChat || operationPending) return
@@ -1038,7 +1053,6 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
-    if (action === 'refresh') loadActiveChat()
     if (action === 'clear') clearSelection()
     if (action === 'save') saveSelectedRange()
     if (action === 'reset') resetContinuity()
@@ -1110,11 +1124,20 @@ export function setup(ctx: SpindleFrontendContext) {
 
     if (message.type === 'threadverse:active_chat') {
       operationPending = false
+      const previousStartId = startIndex === null ? null : messages[startIndex]?.id
+      const previousEndId = endIndex === null ? null : messages[endIndex]?.id
       activeChat = message.chat
       messages = message.messages
       rounds = message.rounds
-      startIndex = null
-      endIndex = null
+      if (message.notice) {
+        startIndex = null
+        endIndex = null
+      } else {
+        const nextStart = previousStartId ? messages.findIndex((item) => item.id === previousStartId) : -1
+        const nextEnd = previousEndId ? messages.findIndex((item) => item.id === previousEndId) : -1
+        startIndex = nextStart >= 0 ? nextStart : null
+        endIndex = nextEnd >= 0 ? nextEnd : null
+      }
       clearError()
       if (message.error && message.chat) showError(message.error)
       renderContinuity()
@@ -1131,13 +1154,22 @@ export function setup(ctx: SpindleFrontendContext) {
   })
 
   const unsubscribeActivate = drawer.onActivate(loadActiveChat)
+  const chatEventUnsubscribers = [
+    ctx.events.on('CHAT_SWITCHED', scheduleChatRefresh),
+    ctx.events.on('MESSAGE_SENT', scheduleActiveChatRefresh),
+    ctx.events.on('MESSAGE_EDITED', scheduleActiveChatRefresh),
+    ctx.events.on('MESSAGE_DELETED', scheduleActiveChatRefresh),
+    ctx.events.on('MESSAGE_SWIPED', scheduleActiveChatRefresh),
+  ]
   send({ type: 'threadverse:get_status' })
   send({ type: 'threadverse:load_settings' })
   loadActiveChat()
 
   return () => {
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
     unsubscribeActivate()
+    for (const unsubscribe of chatEventUnsubscribers) unsubscribe()
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)
     search.removeEventListener('input', renderMessages)
