@@ -233,8 +233,8 @@ const STYLES = `
 
   .threadverse-message {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    gap: 3px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 1px;
     align-items: start;
     width: 100%;
     border: 0;
@@ -457,7 +457,7 @@ export function setup(ctx: SpindleFrontendContext) {
       ? 'None yet'
       : rounds
         .map((round) => `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
-        .join(' -> ')
+        .join(' - ')
     resetButton.disabled = operationPending || !activeChat || rounds.length === 0
     updateSummary()
   }
