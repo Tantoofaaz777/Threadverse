@@ -4,10 +4,13 @@ import {
   type ChatMessageSummary,
   type ConnectionSummary,
   type InstructionPreset,
-  type ThreadverseSettingsPayload,
+  type ThreadverseAutomaticSettings,
+  type ThreadversePromptSettings,
 } from './shared'
 import {
   DEFAULT_INSTRUCTIONS,
+  applyAutomaticSettings,
+  applyPromptSettings,
   emptyStore,
   normalizeStore,
   summarizeRounds,
@@ -18,6 +21,7 @@ import {
 declare const spindle: import('lumiverse-spindle-types').SpindleAPI
 
 const STORE_PATH = 'threadverse-state.json'
+const settingsWriteQueues = new Map<string, Promise<void>>()
 
 function send(payload: BackendToFrontendMessage, userId: string): void {
   spindle.sendToFrontend(payload, userId)
@@ -146,16 +150,47 @@ function validateInstructionPresets(value: unknown): InstructionPreset[] {
   })
 }
 
-async function saveSettings(value: unknown, userId: string): Promise<void> {
+async function queueSettingsWrite(userId: string, operation: () => Promise<void>): Promise<void> {
+  const previous = settingsWriteQueues.get(userId) ?? Promise.resolve()
+  const current = previous.catch(() => undefined).then(operation)
+  settingsWriteQueues.set(userId, current)
+  try {
+    await current
+  } finally {
+    if (settingsWriteQueues.get(userId) === current) settingsWriteQueues.delete(userId)
+  }
+}
+
+async function saveAutomaticSettings(value: unknown, userId: string): Promise<void> {
   if (!value || typeof value !== 'object') throw new Error('Invalid settings payload.')
-  if (!spindle.permissions.has('generation')) {
-    throw new Error('Grant the Generation permission before saving model settings.')
+  const input = value as Partial<ThreadverseAutomaticSettings>
+  const connections = await getConnections(userId)
+  const connection = input.connectionId
+    ? connections.find((candidate) => candidate.id === input.connectionId)
+    : null
+  if (input.connectionId && !connection) throw new Error('Choose an available Lumiverse connection.')
+
+  const settings: ThreadverseAutomaticSettings = {
+    connectionId: connection?.id ?? null,
+    maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
+    temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
+    topP: optionalNumber(input.topP, 'Top P', 0, 1),
+    previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
+    fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
+    maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
   }
 
-  const input = value as Partial<ThreadverseSettingsPayload>
-  const connections = await getConnections(userId)
-  const connection = connections.find((candidate) => candidate.id === input.connectionId)
-  if (!connection) throw new Error('Choose an available Lumiverse connection.')
+  await queueSettingsWrite(userId, async () => {
+    const store = await loadStore(userId)
+    store.settings = applyAutomaticSettings(store.settings, settings)
+    await saveStore(store, userId)
+  })
+  send({ type: 'threadverse:settings_save_result', scope: 'automatic' }, userId)
+}
+
+async function savePromptSettings(value: unknown, userId: string): Promise<void> {
+  if (!value || typeof value !== 'object') throw new Error('Invalid prompt settings payload.')
+  const input = value as Partial<ThreadversePromptSettings>
   const instructionPresets = validateInstructionPresets(input.instructionPresets)
   const activeInstructionPresetId = typeof input.activeInstructionPresetId === 'string'
     ? input.activeInstructionPresetId
@@ -164,22 +199,16 @@ async function saveSettings(value: unknown, userId: string): Promise<void> {
     throw new Error('Choose an active instruction preset.')
   }
 
-  const settings: ThreadverseSettingsPayload = {
-    connectionId: connection.id,
-    maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
-    temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
-    topP: optionalNumber(input.topP, 'Top P', 0, 1),
-    previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
-    fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
-    maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
-    instructionPresets,
-    activeInstructionPresetId,
-  }
-
-  const store = await loadStore(userId)
-  store.settings = settings
-  await saveStore(store, userId)
-  await sendSettingsState(userId, { notice: 'Settings saved.' })
+  await queueSettingsWrite(userId, async () => {
+    const store = await loadStore(userId)
+    store.settings = applyPromptSettings(store.settings, {
+      instructionPresets,
+      activeInstructionPresetId,
+    })
+    await saveStore(store, userId)
+  })
+  spindle.toast.success('Prompt saved.', { userId })
+  send({ type: 'threadverse:settings_save_result', scope: 'prompt' }, userId)
 }
 
 async function sendActiveChat(userId: string, options?: { notice?: string; error?: string }): Promise<void> {
@@ -326,8 +355,13 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
 
-    if (payload.type === 'threadverse:save_settings') {
-      await saveSettings(payload.settings, userId)
+    if (payload.type === 'threadverse:auto_save_settings') {
+      await saveAutomaticSettings(payload.settings, userId)
+      return
+    }
+
+    if (payload.type === 'threadverse:save_prompt') {
+      await savePromptSettings(payload.settings, userId)
       return
     }
 
@@ -339,16 +373,25 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
         submitLabel: 'Create',
         userId,
       })
+      const name = result.cancelled || !result.value ? null : result.value.trim()
+      if (
+        name
+        && payload.existingNames.some((existing) => existing.toLocaleLowerCase() === name.toLocaleLowerCase())
+      ) {
+        spindle.toast.error(`A preset named "${name}" already exists.`, { userId })
+        send({ type: 'threadverse:instruction_preset_name', name: null }, userId)
+        return
+      }
       send({
         type: 'threadverse:instruction_preset_name',
-        name: result.cancelled || !result.value ? null : result.value.trim(),
+        name,
       }, userId)
       return
     }
 
     if (payload.type === 'threadverse:open_instruction_editor') {
       const result = await spindle.textEditor.open({
-        title: 'Threadverse instructions',
+        title: 'Instructions',
         value: payload.value,
         placeholder: 'Describe how the fictional fandom should discuss the story...',
         userId,
@@ -371,7 +414,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Threadverse could not complete the operation.'
     spindle.log.error(`[Threadverse] ${message}`)
-    if (payload.type === 'threadverse:save_settings' || payload.type === 'threadverse:load_settings') {
+    if (payload.type === 'threadverse:load_settings') {
       try {
         await sendSettingsState(userId, { error: message })
       } catch {
@@ -379,10 +422,17 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       }
       return
     }
+    if (payload.type === 'threadverse:auto_save_settings' || payload.type === 'threadverse:save_prompt') {
+      const scope = payload.type === 'threadverse:save_prompt' ? 'prompt' : 'automatic'
+      spindle.toast.error(message, { userId })
+      send({ type: 'threadverse:settings_save_result', scope, error: message }, userId)
+      return
+    }
     if (
       payload.type === 'threadverse:request_instruction_preset_name'
       || payload.type === 'threadverse:open_instruction_editor'
     ) {
+      spindle.toast.error(message, { userId })
       send({ type: 'threadverse:operation_error', error: message }, userId)
       return
     }

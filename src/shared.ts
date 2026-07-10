@@ -31,6 +31,21 @@ export interface ThreadverseSettingsPayload {
   activeInstructionPresetId: string
 }
 
+export type ThreadverseAutomaticSettings = Pick<ThreadverseSettingsPayload,
+  | 'connectionId'
+  | 'maxOutputTokens'
+  | 'temperature'
+  | 'topP'
+  | 'previousRangeLimit'
+  | 'fandomThreadLimit'
+  | 'maintainFandomContinuity'
+>
+
+export type ThreadversePromptSettings = Pick<ThreadverseSettingsPayload,
+  | 'instructionPresets'
+  | 'activeInstructionPresetId'
+>
+
 export interface InstructionPreset {
   id: string
   name: string
@@ -49,8 +64,9 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:get_status' }
   | { type: 'threadverse:load_active_chat' }
   | { type: 'threadverse:load_settings' }
-  | { type: 'threadverse:save_settings'; settings: ThreadverseSettingsPayload }
-  | { type: 'threadverse:request_instruction_preset_name' }
+  | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
+  | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
+  | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
       type: 'threadverse:save_range'
@@ -83,6 +99,7 @@ export type BackendToFrontendMessage =
       error?: string
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
+  | { type: 'threadverse:settings_save_result'; scope: 'automatic' | 'prompt'; error?: string }
   | {
       type: 'threadverse:instruction_editor_result'
       presetId: string
@@ -96,7 +113,8 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
   return type === 'threadverse:get_status'
     || type === 'threadverse:load_active_chat'
     || type === 'threadverse:load_settings'
-    || type === 'threadverse:save_settings'
+    || type === 'threadverse:auto_save_settings'
+    || type === 'threadverse:save_prompt'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:save_range'

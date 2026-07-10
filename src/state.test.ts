@@ -3,6 +3,8 @@ import { buildThreadversePrompt } from './prompt'
 import { toggleRangeEndpoint } from './range-selection'
 import {
   DEFAULT_SETTINGS,
+  applyAutomaticSettings,
+  applyPromptSettings,
   emptyStore,
   normalizeStore,
   resolveContinuity,
@@ -88,6 +90,33 @@ describe('Threadverse continuity', () => {
     expect(store.settings.instructionPresets).toEqual([
       { id: 'default', name: 'Default', instructions: 'My old prompt' },
     ])
+  })
+
+  test('automatic saves never overwrite unsaved prompt data', () => {
+    const current = emptyStore().settings
+    current.instructionPresets[0].instructions = 'Prompt draft'
+    const next = applyAutomaticSettings(current, {
+      connectionId: 'connection-1',
+      maxOutputTokens: 8000,
+      temperature: 0.8,
+      topP: 0.9,
+      previousRangeLimit: 5,
+      fandomThreadLimit: 4,
+      maintainFandomContinuity: false,
+    })
+    expect(next.instructionPresets[0].instructions).toBe('Prompt draft')
+    expect(next.temperature).toBe(0.8)
+  })
+
+  test('prompt saves never overwrite automatic settings', () => {
+    const current = emptyStore().settings
+    current.temperature = 0.6
+    const next = applyPromptSettings(current, {
+      instructionPresets: [{ id: 'custom', name: 'Custom', instructions: 'New prompt' }],
+      activeInstructionPresetId: 'custom',
+    })
+    expect(next.temperature).toBe(0.6)
+    expect(next.activeInstructionPresetId).toBe('custom')
   })
 
   test('keeps the newest configured ranges in chronological order', () => {

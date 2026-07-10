@@ -15,6 +15,7 @@ This is the initial scaffold. It includes:
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - persisted continuity limits and editable permanent instructions;
 - named instruction presets with the native expanded Lumiverse text editor;
+- automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
 - a prompt builder for chronological story and fandom continuity;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.

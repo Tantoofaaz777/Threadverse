@@ -357,17 +357,9 @@ const STYLES = `
     min-height: 30px;
   }
 
-  .threadverse-settings-status {
-    min-height: 15px;
-    color: var(--lumiverse-success, #22c55e);
-    font-size: 10px;
-  }
-
-  .threadverse-settings-status.is-error { color: var(--lumiverse-danger, #ef4444); }
-
   .threadverse-settings-actions {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
   }
 
@@ -550,11 +542,8 @@ export function setup(ctx: SpindleFrontendContext) {
               </button>
             </div>
           </div>
-          <p class="threadverse-settings-hint">The context section headers are assembled by Threadverse. This prompt controls the fandom's behavior and output.</p>
-          <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
           <div class="threadverse-settings-actions">
-            <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
-            <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-settings" disabled>Save Settings</button>
+            <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-prompt">Save Prompt</button>
           </div>
         </section>
       </div>
@@ -573,8 +562,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
-  const settingsStatus = shell.querySelector<HTMLElement>('[data-settings-status]')!
-  const saveSettingsButton = shell.querySelector<HTMLButtonElement>('[data-action="save-settings"]')!
+  const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
+  const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -583,6 +572,8 @@ export function setup(ctx: SpindleFrontendContext) {
   let startIndex: number | null = null
   let endIndex: number | null = null
   let operationPending = false
+  let promptSavePending = false
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
   let defaultInstructions = ''
@@ -604,11 +595,6 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function settingTarget(name: string): HTMLElement {
     return shell.querySelector<HTMLElement>(`[data-setting="${name}"]`)!
-  }
-
-  function setSettingsStatus(message: string, error = false): void {
-    settingsStatus.textContent = message
-    settingsStatus.classList.toggle('is-error', error)
   }
 
   function destroySettingsComponents(): void {
@@ -652,6 +638,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (!settingsDraft) return
         const connection = connections.find((candidate) => candidate.id === connectionId)
         settingsDraft.connectionId = connection?.id ?? null
+        scheduleAutomaticSave()
       },
     })
 
@@ -665,7 +652,10 @@ export function setup(ctx: SpindleFrontendContext) {
       integer: true,
       className: 'threadverse-secondary-input',
       onChange: (value) => {
-        if (settingsDraft) settingsDraft.maxOutputTokens = value
+        if (settingsDraft) {
+          settingsDraft.maxOutputTokens = value
+          scheduleAutomaticSave()
+        }
       },
     })
 
@@ -678,7 +668,10 @@ export function setup(ctx: SpindleFrontendContext) {
       step: 0.05,
       className: 'threadverse-secondary-input',
       onChange: (value) => {
-        if (settingsDraft) settingsDraft.temperature = value
+        if (settingsDraft) {
+          settingsDraft.temperature = value
+          scheduleAutomaticSave()
+        }
       },
     })
 
@@ -691,7 +684,10 @@ export function setup(ctx: SpindleFrontendContext) {
       step: 0.05,
       className: 'threadverse-secondary-input',
       onChange: (value) => {
-        if (settingsDraft) settingsDraft.topP = value
+        if (settingsDraft) {
+          settingsDraft.topP = value
+          scheduleAutomaticSave()
+        }
       },
     })
 
@@ -705,7 +701,10 @@ export function setup(ctx: SpindleFrontendContext) {
       integer: true,
       className: 'threadverse-secondary-input',
       onChange: (value) => {
-        if (settingsDraft) settingsDraft.previousRangeLimit = value
+        if (settingsDraft) {
+          settingsDraft.previousRangeLimit = value
+          scheduleAutomaticSave()
+        }
       },
     })
 
@@ -720,7 +719,10 @@ export function setup(ctx: SpindleFrontendContext) {
       className: 'threadverse-secondary-input',
       disabled: !settingsDraft.maintainFandomContinuity,
       onChange: (value) => {
-        if (settingsDraft) settingsDraft.fandomThreadLimit = value
+        if (settingsDraft) {
+          settingsDraft.fandomThreadLimit = value
+          scheduleAutomaticSave()
+        }
       },
     })
 
@@ -732,6 +734,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (!settingsDraft) return
         settingsDraft.maintainFandomContinuity = checked
         fandomThreadsHandle?.update({ disabled: !checked })
+        scheduleAutomaticSave()
       },
     })
 
@@ -777,43 +780,55 @@ export function setup(ctx: SpindleFrontendContext) {
       instructionPresetHandle,
       instructionsHandle,
     ]
-    saveSettingsButton.disabled = connections.length === 0
+    savePromptButton.disabled = false
+    deleteInstructionPresetButton.disabled = settingsDraft.instructionPresets.length <= 1
   }
 
-  function saveSettings(): void {
-    if (!settingsDraft || operationPending) return
-    operationPending = true
-    saveSettingsButton.disabled = true
-    setSettingsStatus('Saving settings...')
+  function scheduleAutomaticSave(): void {
+    if (!settingsDraft) return
+    if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    autoSaveTimer = setTimeout(() => {
+      autoSaveTimer = null
+      if (!settingsDraft) return
+      send({
+        type: 'threadverse:auto_save_settings',
+        settings: {
+          connectionId: settingsDraft.connectionId,
+          maxOutputTokens: settingsDraft.maxOutputTokens,
+          temperature: settingsDraft.temperature,
+          topP: settingsDraft.topP,
+          previousRangeLimit: settingsDraft.previousRangeLimit,
+          fandomThreadLimit: settingsDraft.fandomThreadLimit,
+          maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
+        },
+      })
+    }, 350)
+  }
+
+  function savePrompt(): void {
+    if (!settingsDraft || promptSavePending) return
+    promptSavePending = true
+    savePromptButton.disabled = true
     send({
-      type: 'threadverse:save_settings',
+      type: 'threadverse:save_prompt',
       settings: {
-        ...settingsDraft,
         instructionPresets: settingsDraft.instructionPresets.map((preset) => ({ ...preset })),
+        activeInstructionPresetId: settingsDraft.activeInstructionPresetId,
       },
     })
   }
 
-  function resetInstructions(): void {
-    const preset = getActiveInstructionPreset()
-    if (!preset || !instructionsHandle) return
-    preset.instructions = defaultInstructions
-    instructionsHandle.update({ value: defaultInstructions })
-    setSettingsStatus('Default prompt restored. Save settings to keep it.')
-  }
-
   function requestNewInstructionPreset(): void {
     if (!settingsDraft || operationPending) return
-    setSettingsStatus('Waiting for a preset name...')
-    send({ type: 'threadverse:request_instruction_preset_name' })
+    send({
+      type: 'threadverse:request_instruction_preset_name',
+      existingNames: settingsDraft.instructionPresets.map((preset) => preset.name),
+    })
   }
 
   async function deleteInstructionPreset(): Promise<void> {
     if (!settingsDraft || operationPending) return
-    if (settingsDraft.instructionPresets.length <= 1) {
-      setSettingsStatus('Keep at least one instruction preset.', true)
-      return
-    }
+    if (settingsDraft.instructionPresets.length <= 1) return
     const activePreset = getActiveInstructionPreset()
     if (!activePreset) return
     const result = await ctx.ui.showConfirm({
@@ -828,13 +843,11 @@ export function setup(ctx: SpindleFrontendContext) {
     )
     settingsDraft.activeInstructionPresetId = settingsDraft.instructionPresets[0].id
     mountSettingsForm(settingsDraft, settingsConnections)
-    setSettingsStatus('Preset deleted. Save settings to keep this change.')
   }
 
   function expandInstructions(): void {
     const preset = getActiveInstructionPreset()
     if (!preset || operationPending) return
-    setSettingsStatus('Expanded editor opened...')
     send({
       type: 'threadverse:open_instruction_editor',
       presetId: preset.id,
@@ -846,8 +859,7 @@ export function setup(ctx: SpindleFrontendContext) {
     activeTab = next
     for (const tab of tabs) tab.classList.toggle('is-active', tab.dataset.tab === activeTab)
     for (const panel of panels) panel.hidden = panel.dataset.panel !== activeTab
-    if (next === 'settings') {
-      setSettingsStatus('Loading settings...')
+    if (next === 'settings' && !settingsDraft) {
       send({ type: 'threadverse:load_settings' })
     }
   }
@@ -1030,8 +1042,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'clear') clearSelection()
     if (action === 'save') saveSelectedRange()
     if (action === 'reset') resetContinuity()
-    if (action === 'save-settings') saveSettings()
-    if (action === 'reset-instructions') resetInstructions()
+    if (action === 'save-prompt') savePrompt()
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
     if (action === 'delete-instruction-preset') void deleteInstructionPreset()
     if (action === 'expand-instructions') expandInstructions()
@@ -1045,10 +1056,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:operation_error') {
       operationPending = false
-      if (activeTab === 'settings') {
-        saveSettingsButton.disabled = false
-        setSettingsStatus(message.error, true)
-      } else {
+      if (activeTab !== 'settings') {
         showError(message.error)
       }
       renderContinuity()
@@ -1059,19 +1067,19 @@ export function setup(ctx: SpindleFrontendContext) {
       operationPending = false
       defaultInstructions = message.defaultInstructions
       mountSettingsForm(message.settings, message.connections)
-      setSettingsStatus(message.error ?? message.notice ?? '', Boolean(message.error))
+      return
+    }
+
+    if (message.type === 'threadverse:settings_save_result') {
+      if (message.scope === 'prompt') {
+        promptSavePending = false
+        savePromptButton.disabled = false
+      }
       return
     }
 
     if (message.type === 'threadverse:instruction_preset_name') {
       if (!message.name || !settingsDraft) {
-        setSettingsStatus('Preset creation cancelled.')
-        return
-      }
-      if (settingsDraft.instructionPresets.some(
-        (preset) => preset.name.toLocaleLowerCase() === message.name!.toLocaleLowerCase(),
-      )) {
-        setSettingsStatus(`A preset named "${message.name}" already exists.`, true)
         return
       }
       const source = getActiveInstructionPreset()
@@ -1083,7 +1091,6 @@ export function setup(ctx: SpindleFrontendContext) {
       settingsDraft.instructionPresets.push(preset)
       settingsDraft.activeInstructionPresetId = preset.id
       mountSettingsForm(settingsDraft, settingsConnections)
-      setSettingsStatus('Preset created. Save settings to keep it.')
       return
     }
 
@@ -1096,9 +1103,6 @@ export function setup(ctx: SpindleFrontendContext) {
             instructionsHandle?.update({ value: message.text })
           }
         }
-        setSettingsStatus('Expanded edit applied. Save settings to keep it.')
-      } else {
-        setSettingsStatus('Expanded edit cancelled.')
       }
       return
     }
@@ -1131,6 +1135,7 @@ export function setup(ctx: SpindleFrontendContext) {
   loadActiveChat()
 
   return () => {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer)
     unsubscribeActivate()
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)

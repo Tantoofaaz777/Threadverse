@@ -2,6 +2,8 @@ import type {
   ChatMessageSummary,
   InstructionPreset,
   RoundSummary,
+  ThreadverseAutomaticSettings,
+  ThreadversePromptSettings,
   ThreadverseSettingsPayload,
 } from './shared'
 
@@ -80,6 +82,24 @@ export function resolveContinuity(settings: ThreadverseSettings): ResolvedContin
   return {
     previousRangeLimit: settings.previousRangeLimit ?? DEFAULT_CONTINUITY.previousRangeLimit,
     fandomThreadLimit: settings.fandomThreadLimit ?? DEFAULT_CONTINUITY.fandomThreadLimit,
+  }
+}
+
+export function applyAutomaticSettings(
+  current: ThreadverseSettings,
+  automatic: ThreadverseAutomaticSettings,
+): ThreadverseSettings {
+  return { ...current, ...automatic }
+}
+
+export function applyPromptSettings(
+  current: ThreadverseSettings,
+  prompt: ThreadversePromptSettings,
+): ThreadverseSettings {
+  return {
+    ...current,
+    instructionPresets: prompt.instructionPresets.map((preset) => ({ ...preset })),
+    activeInstructionPresetId: prompt.activeInstructionPresetId,
   }
 }
 
