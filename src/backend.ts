@@ -337,7 +337,9 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       const scope = payload.type === 'threadverse:save_prompt' ? 'prompt' : 'automatic'; spindle.toast.error(message, { userId }); send({ type: 'threadverse:settings_save_result', scope, error: message }, userId); return
     }
     if (payload.type === 'threadverse:generate_thread' || payload.type === 'threadverse:regenerate_thread') {
-      send({ type: 'threadverse:generation_state', status: error instanceof Error && error.name === 'AbortError' ? 'cancelled' : 'error', error: error instanceof Error && error.name === 'AbortError' ? undefined : message }, userId); return
+      const cancelled = error instanceof Error && error.name === 'AbortError'
+      if (!cancelled) spindle.toast.error(message, { userId })
+      send({ type: 'threadverse:generation_state', status: cancelled ? 'cancelled' : 'error' }, userId); return
     }
     if (payload.type === 'threadverse:reset_continuity' || payload.type === 'threadverse:delete_round') { send({ type: 'threadverse:operation_error', error: message }, userId); return }
     spindle.toast.error(message, { userId }); send({ type: 'threadverse:operation_error', error: message }, userId)

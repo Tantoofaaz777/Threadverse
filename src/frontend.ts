@@ -1389,7 +1389,6 @@ export function setup(ctx: SpindleFrontendContext) {
       operationPending = generationPending
       cancelButton.hidden = !generationPending
       saveButton.textContent = generationPending ? 'Generating...' : 'Generate Thread'
-      if (message.status === 'error' && message.error) showError(message.error)
       if (message.status === 'completed') {
         if (message.roundId) selectedFeedRoundId = message.roundId
         switchTab('feed')
