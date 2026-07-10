@@ -34,8 +34,7 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
     '>>> INSTRUCTIONS <<<',
     input.instructions.trim(),
     '>>> OUTPUT FORMAT <<<',
-    `Return only one valid JSON object. Do not use Markdown fences or add text before or after it.
-Use this exact structure:
+    `You must respond with ONLY valid JSON in this exact format:
 {
   "subreddit": "community name without r/",
   "title": "thread title",
@@ -43,6 +42,7 @@ Use this exact structure:
   "comments": [
     { "id": "unique-id", "username": "name", "body": "text", "score": 0, "flair": null, "timestamp": null, "replies": [] }
   ]
-}`,
+}
+Return ONLY the JSON—no explanations, no notes, no commentary.`,
   ].join('\n\n')
 }
