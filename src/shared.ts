@@ -24,9 +24,16 @@ export interface ThreadverseSettingsPayload {
   maxOutputTokens: number | null
   temperature: number | null
   topP: number | null
-  previousRangeLimit: number
-  fandomThreadLimit: number
+  previousRangeLimit: number | null
+  fandomThreadLimit: number | null
   maintainFandomContinuity: boolean
+  instructionPresets: InstructionPreset[]
+  activeInstructionPresetId: string
+}
+
+export interface InstructionPreset {
+  id: string
+  name: string
   instructions: string
 }
 
@@ -43,6 +50,8 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:load_active_chat' }
   | { type: 'threadverse:load_settings' }
   | { type: 'threadverse:save_settings'; settings: ThreadverseSettingsPayload }
+  | { type: 'threadverse:request_instruction_preset_name' }
+  | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
       type: 'threadverse:save_range'
       chatId: string
@@ -73,6 +82,13 @@ export type BackendToFrontendMessage =
       notice?: string
       error?: string
     }
+  | { type: 'threadverse:instruction_preset_name'; name: string | null }
+  | {
+      type: 'threadverse:instruction_editor_result'
+      presetId: string
+      text: string
+      cancelled: boolean
+    }
 
 export function isFrontendMessage(value: unknown): value is FrontendToBackendMessage {
   if (!value || typeof value !== 'object') return false
@@ -81,6 +97,8 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:load_active_chat'
     || type === 'threadverse:load_settings'
     || type === 'threadverse:save_settings'
+    || type === 'threadverse:request_instruction_preset_name'
+    || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:save_range'
     || type === 'threadverse:reset_continuity'
 }

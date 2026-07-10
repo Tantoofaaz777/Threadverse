@@ -1,5 +1,6 @@
 import type {
   ChatMessageSummary,
+  InstructionPreset,
   RoundSummary,
   ThreadverseSettingsPayload,
 } from './shared'
@@ -28,23 +29,38 @@ export const DEFAULT_SETTINGS: ThreadverseSettings = {
   maxOutputTokens: null,
   temperature: null,
   topP: null,
-  previousRangeLimit: 3,
-  fandomThreadLimit: 3,
+  previousRangeLimit: null,
+  fandomThreadLimit: null,
   maintainFandomContinuity: true,
-  instructions: `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
+  instructionPresets: [{
+    id: 'default',
+    name: 'Default',
+    instructions: `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
 
 Treat PREVIOUS CONTEXT as events the fandom already knows. Treat RECENT CONTEXT as the new material the current discussion should focus on. Use FANDOM CONTINUITY to preserve recurring usernames, theories, opinions, jokes, and disagreements from earlier threads.
 
 Create a convincing Reddit-style discussion with a post title, an opening post, varied commenters, nested replies, votes, flairs, theories, jokes, criticism, shipping, and genuine disagreement where appropriate. Do not continue or rewrite the story itself. Discuss it as an audience would.`,
+  }],
+  activeInstructionPresetId: 'default',
 }
 
-export const DEFAULT_INSTRUCTIONS = DEFAULT_SETTINGS.instructions
+export const DEFAULT_INSTRUCTIONS = DEFAULT_SETTINGS.instructionPresets[0].instructions
 
 export const DEFAULT_SAMPLERS = {
   maxOutputTokens: 4096,
   temperature: 1,
   topP: 1,
 } as const
+
+export const DEFAULT_CONTINUITY = {
+  previousRangeLimit: 3,
+  fandomThreadLimit: 3,
+} as const
+
+export interface ResolvedContinuity {
+  previousRangeLimit: number
+  fandomThreadLimit: number
+}
 
 export interface ResolvedSamplers {
   maxOutputTokens: number
@@ -60,8 +76,23 @@ export function resolveSamplers(settings: ThreadverseSettings): ResolvedSamplers
   }
 }
 
+export function resolveContinuity(settings: ThreadverseSettings): ResolvedContinuity {
+  return {
+    previousRangeLimit: settings.previousRangeLimit ?? DEFAULT_CONTINUITY.previousRangeLimit,
+    fandomThreadLimit: settings.fandomThreadLimit ?? DEFAULT_CONTINUITY.fandomThreadLimit,
+  }
+}
+
+function cloneDefaultPresets(): InstructionPreset[] {
+  return DEFAULT_SETTINGS.instructionPresets.map((preset) => ({ ...preset }))
+}
+
 export function emptyStore(): ThreadverseStore {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, chats: {} }
+  return {
+    version: 1,
+    settings: { ...DEFAULT_SETTINGS, instructionPresets: cloneDefaultPresets() },
+    chats: {},
+  }
 }
 
 export function normalizeStore(value: unknown): ThreadverseStore {
@@ -70,11 +101,41 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (candidate.version !== 1 || !candidate.chats || typeof candidate.chats !== 'object') {
     return emptyStore()
   }
-  const savedSettings = candidate.settings as Partial<ThreadverseSettings> & { model?: unknown } | undefined
-  const { model: _legacyModel, ...savedWithoutLegacyModel } = savedSettings ?? {}
+  const savedSettings = candidate.settings as Partial<ThreadverseSettings> & {
+    model?: unknown
+    instructions?: unknown
+  } | undefined
+  const {
+    model: _legacyModel,
+    instructions: legacyInstructions,
+    ...savedWithoutLegacyFields
+  } = savedSettings ?? {}
+  const savedPresets = Array.isArray(savedSettings?.instructionPresets)
+    ? savedSettings.instructionPresets
+        .filter((preset): preset is InstructionPreset => Boolean(
+          preset
+          && typeof preset.id === 'string'
+          && typeof preset.name === 'string'
+          && typeof preset.instructions === 'string',
+        ))
+        .map((preset) => ({ ...preset }))
+    : []
+  const instructionPresets = savedPresets.length > 0
+    ? savedPresets
+    : [{
+        id: 'default',
+        name: 'Default',
+        instructions: typeof legacyInstructions === 'string' ? legacyInstructions : DEFAULT_INSTRUCTIONS,
+      }]
+  const requestedActivePresetId = savedSettings?.activeInstructionPresetId
+  const activeInstructionPresetId = instructionPresets.some((preset) => preset.id === requestedActivePresetId)
+    ? requestedActivePresetId!
+    : instructionPresets[0].id
   const mergedSettings = {
     ...DEFAULT_SETTINGS,
-    ...savedWithoutLegacyModel,
+    ...savedWithoutLegacyFields,
+    instructionPresets,
+    activeInstructionPresetId,
   }
 
   // Version 0.3.0 stored the effective defaults as explicit values. Convert
@@ -82,6 +143,8 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (mergedSettings.maxOutputTokens === DEFAULT_SAMPLERS.maxOutputTokens) mergedSettings.maxOutputTokens = null
   if (mergedSettings.temperature === DEFAULT_SAMPLERS.temperature) mergedSettings.temperature = null
   if (mergedSettings.topP === DEFAULT_SAMPLERS.topP) mergedSettings.topP = null
+  if (mergedSettings.previousRangeLimit === DEFAULT_CONTINUITY.previousRangeLimit) mergedSettings.previousRangeLimit = null
+  if (mergedSettings.fandomThreadLimit === DEFAULT_CONTINUITY.fandomThreadLimit) mergedSettings.fandomThreadLimit = null
 
   return {
     version: 1,
@@ -99,5 +162,6 @@ export function summarizeRounds(rounds: StoredRound[]): RoundSummary[] {
 
 export function selectPreviousRounds(store: ThreadverseStore, chatId: string): StoredRound[] {
   const rounds = store.chats[chatId]?.rounds ?? []
-  return rounds.slice(-Math.max(0, store.settings.previousRangeLimit))
+  const limit = Math.max(0, resolveContinuity(store.settings).previousRangeLimit)
+  return limit === 0 ? [] : rounds.slice(-limit)
 }

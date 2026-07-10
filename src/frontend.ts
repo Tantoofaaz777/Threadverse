@@ -1,6 +1,7 @@
 import type {
   SpindleFrontendContext,
   SpindleNumericInputHandle,
+  SpindleSelectHandle,
   SpindleTextAreaHandle,
 } from 'lumiverse-spindle-types'
 import type {
@@ -369,6 +370,18 @@ const STYLES = `
     justify-content: space-between;
     gap: 8px;
   }
+
+  .threadverse-preset-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .threadverse-preset-actions {
+    display: flex;
+    gap: 6px;
+  }
 `
 
 export function setup(ctx: SpindleFrontendContext) {
@@ -483,10 +496,18 @@ export function setup(ctx: SpindleFrontendContext) {
 
         <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Instructions</h3>
+          <div class="threadverse-preset-row">
+            <div data-setting="instruction-preset"></div>
+            <button class="threadverse-button threadverse-button--compact" type="button" data-action="new-instruction-preset">New</button>
+            <button class="threadverse-button threadverse-button--compact" type="button" data-action="delete-instruction-preset">Delete</button>
+          </div>
           <div class="threadverse-settings-field">
             <div data-setting="instructions"></div>
           </div>
           <p class="threadverse-settings-hint">The context section headers are assembled by Threadverse. This prompt controls the fandom's behavior and output.</p>
+          <div class="threadverse-preset-actions">
+            <button class="threadverse-button" type="button" data-action="expand-instructions">Expand editor</button>
+          </div>
           <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
           <div class="threadverse-settings-actions">
             <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
@@ -520,7 +541,9 @@ export function setup(ctx: SpindleFrontendContext) {
   let endIndex: number | null = null
   let operationPending = false
   let settingsDraft: ThreadverseSettingsPayload | null = null
+  let settingsConnections: ConnectionSummary[] = []
   let defaultInstructions = ''
+  let instructionPresetHandle: SpindleSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let settingsComponents: Array<{ destroy(): void }> = []
 
@@ -548,7 +571,14 @@ export function setup(ctx: SpindleFrontendContext) {
   function destroySettingsComponents(): void {
     for (const component of settingsComponents) component.destroy()
     settingsComponents = []
+    instructionPresetHandle = null
     instructionsHandle = null
+  }
+
+  function getActiveInstructionPreset() {
+    return settingsDraft?.instructionPresets.find(
+      (preset) => preset.id === settingsDraft?.activeInstructionPresetId,
+    ) ?? null
   }
 
   function mountSettingsForm(
@@ -556,7 +586,11 @@ export function setup(ctx: SpindleFrontendContext) {
     connections: ConnectionSummary[],
   ): void {
     destroySettingsComponents()
-    settingsDraft = { ...settings }
+    settingsDraft = {
+      ...settings,
+      instructionPresets: settings.instructionPresets.map((preset) => ({ ...preset })),
+    }
+    settingsConnections = connections
     let fandomThreadsHandle: SpindleNumericInputHandle | null = null
 
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
@@ -620,18 +654,22 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const previousRangesHandle = ctx.components.mountNumericInput(settingTarget('previous-ranges'), {
       value: settingsDraft.previousRangeLimit,
+      allowEmpty: true,
+      placeholder: '3',
       min: 0,
       max: 50,
       step: 1,
       integer: true,
       className: 'threadverse-secondary-input',
       onChange: (value) => {
-        if (settingsDraft && value !== null) settingsDraft.previousRangeLimit = value
+        if (settingsDraft) settingsDraft.previousRangeLimit = value
       },
     })
 
     fandomThreadsHandle = ctx.components.mountNumericInput(settingTarget('fandom-threads'), {
       value: settingsDraft.fandomThreadLimit,
+      allowEmpty: true,
+      placeholder: '3',
       min: 0,
       max: 50,
       step: 1,
@@ -639,7 +677,7 @@ export function setup(ctx: SpindleFrontendContext) {
       className: 'threadverse-secondary-input',
       disabled: !settingsDraft.maintainFandomContinuity,
       onChange: (value) => {
-        if (settingsDraft && value !== null) settingsDraft.fandomThreadLimit = value
+        if (settingsDraft) settingsDraft.fandomThreadLimit = value
       },
     })
 
@@ -654,13 +692,34 @@ export function setup(ctx: SpindleFrontendContext) {
       },
     })
 
+    const activePreset = getActiveInstructionPreset() ?? settingsDraft.instructionPresets[0]
+    settingsDraft.activeInstructionPresetId = activePreset.id
+    instructionPresetHandle = ctx.components.mountSelect(settingTarget('instruction-preset'), {
+      value: activePreset.id,
+      options: settingsDraft.instructionPresets.map((preset) => ({
+        value: preset.id,
+        label: preset.name,
+      })),
+      searchThreshold: 6,
+      searchPlaceholder: 'Search presets...',
+      onChange: (presetId) => {
+        if (!settingsDraft) return
+        const preset = settingsDraft.instructionPresets.find((candidate) => candidate.id === presetId)
+        if (!preset) return
+        settingsDraft.activeInstructionPresetId = preset.id
+        instructionsHandle?.update({ value: preset.instructions })
+      },
+      triggerClassName: 'threadverse-secondary-input',
+    })
+
     instructionsHandle = ctx.components.mountTextArea(settingTarget('instructions'), {
-      value: settingsDraft.instructions,
+      value: activePreset.instructions,
       rows: 14,
       ariaLabel: 'Permanent Threadverse instructions',
       className: 'threadverse-secondary-input',
       onChange: (instructions) => {
-        if (settingsDraft) settingsDraft.instructions = instructions
+        const preset = getActiveInstructionPreset()
+        if (preset) preset.instructions = instructions
       },
     })
 
@@ -672,6 +731,7 @@ export function setup(ctx: SpindleFrontendContext) {
       previousRangesHandle,
       fandomThreadsHandle,
       fandomSwitchHandle,
+      instructionPresetHandle,
       instructionsHandle,
     ]
     saveSettingsButton.disabled = connections.length === 0
@@ -682,14 +742,61 @@ export function setup(ctx: SpindleFrontendContext) {
     operationPending = true
     saveSettingsButton.disabled = true
     setSettingsStatus('Saving settings...')
-    send({ type: 'threadverse:save_settings', settings: { ...settingsDraft } })
+    send({
+      type: 'threadverse:save_settings',
+      settings: {
+        ...settingsDraft,
+        instructionPresets: settingsDraft.instructionPresets.map((preset) => ({ ...preset })),
+      },
+    })
   }
 
   function resetInstructions(): void {
-    if (!settingsDraft || !instructionsHandle) return
-    settingsDraft.instructions = defaultInstructions
+    const preset = getActiveInstructionPreset()
+    if (!preset || !instructionsHandle) return
+    preset.instructions = defaultInstructions
     instructionsHandle.update({ value: defaultInstructions })
     setSettingsStatus('Default prompt restored. Save settings to keep it.')
+  }
+
+  function requestNewInstructionPreset(): void {
+    if (!settingsDraft || operationPending) return
+    setSettingsStatus('Waiting for a preset name...')
+    send({ type: 'threadverse:request_instruction_preset_name' })
+  }
+
+  async function deleteInstructionPreset(): Promise<void> {
+    if (!settingsDraft || operationPending) return
+    if (settingsDraft.instructionPresets.length <= 1) {
+      setSettingsStatus('Keep at least one instruction preset.', true)
+      return
+    }
+    const activePreset = getActiveInstructionPreset()
+    if (!activePreset) return
+    const result = await ctx.ui.showConfirm({
+      title: 'Delete instruction preset',
+      message: `Delete "${activePreset.name}"?`,
+      variant: 'danger',
+      confirmLabel: 'Delete',
+    })
+    if (!result.confirmed || !settingsDraft) return
+    settingsDraft.instructionPresets = settingsDraft.instructionPresets.filter(
+      (preset) => preset.id !== activePreset.id,
+    )
+    settingsDraft.activeInstructionPresetId = settingsDraft.instructionPresets[0].id
+    mountSettingsForm(settingsDraft, settingsConnections)
+    setSettingsStatus('Preset deleted. Save settings to keep this change.')
+  }
+
+  function expandInstructions(): void {
+    const preset = getActiveInstructionPreset()
+    if (!preset || operationPending) return
+    setSettingsStatus('Expanded editor opened...')
+    send({
+      type: 'threadverse:open_instruction_editor',
+      presetId: preset.id,
+      value: preset.instructions,
+    })
   }
 
   function switchTab(next: ThreadverseTab): void {
@@ -882,6 +989,9 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'reset') resetContinuity()
     if (action === 'save-settings') saveSettings()
     if (action === 'reset-instructions') resetInstructions()
+    if (action === 'new-instruction-preset') requestNewInstructionPreset()
+    if (action === 'delete-instruction-preset') void deleteInstructionPreset()
+    if (action === 'expand-instructions') expandInstructions()
   }
 
   shell.addEventListener('click', onClick)
@@ -907,6 +1017,46 @@ export function setup(ctx: SpindleFrontendContext) {
       defaultInstructions = message.defaultInstructions
       mountSettingsForm(message.settings, message.connections)
       setSettingsStatus(message.error ?? message.notice ?? '', Boolean(message.error))
+      return
+    }
+
+    if (message.type === 'threadverse:instruction_preset_name') {
+      if (!message.name || !settingsDraft) {
+        setSettingsStatus('Preset creation cancelled.')
+        return
+      }
+      if (settingsDraft.instructionPresets.some(
+        (preset) => preset.name.toLocaleLowerCase() === message.name!.toLocaleLowerCase(),
+      )) {
+        setSettingsStatus(`A preset named "${message.name}" already exists.`, true)
+        return
+      }
+      const source = getActiveInstructionPreset()
+      const preset = {
+        id: crypto.randomUUID(),
+        name: message.name,
+        instructions: source?.instructions ?? defaultInstructions,
+      }
+      settingsDraft.instructionPresets.push(preset)
+      settingsDraft.activeInstructionPresetId = preset.id
+      mountSettingsForm(settingsDraft, settingsConnections)
+      setSettingsStatus('Preset created. Save settings to keep it.')
+      return
+    }
+
+    if (message.type === 'threadverse:instruction_editor_result') {
+      if (!message.cancelled && settingsDraft) {
+        const preset = settingsDraft.instructionPresets.find((candidate) => candidate.id === message.presetId)
+        if (preset) {
+          preset.instructions = message.text
+          if (preset.id === settingsDraft.activeInstructionPresetId) {
+            instructionsHandle?.update({ value: message.text })
+          }
+        }
+        setSettingsStatus('Expanded edit applied. Save settings to keep it.')
+      } else {
+        setSettingsStatus('Expanded edit cancelled.')
+      }
       return
     }
 

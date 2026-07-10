@@ -14,6 +14,7 @@ This is the initial scaffold. It includes:
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - persisted continuity limits and editable permanent instructions;
+- named instruction presets with the native expanded Lumiverse text editor;
 - a prompt builder for chronological story and fandom continuity;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.

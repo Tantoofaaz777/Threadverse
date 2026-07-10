@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   emptyStore,
   normalizeStore,
+  resolveContinuity,
   resolveSamplers,
   selectPreviousRounds,
   type StoredRound,
@@ -51,7 +52,7 @@ describe('Threadverse continuity', () => {
     expect(store.settings.previousRangeLimit).toBe(8)
     expect(store.settings.temperature).toBe(0.75)
     expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
-    expect(store.settings.instructions).toBe(DEFAULT_SETTINGS.instructions)
+    expect(store.settings.instructionPresets).toEqual(DEFAULT_SETTINGS.instructionPresets)
   })
 
   test('uses sampler hints when optional sampler fields are empty', () => {
@@ -66,6 +67,29 @@ describe('Threadverse continuity', () => {
     expect(resolveSamplers(store.settings).temperature).toBe(0.7)
   })
 
+  test('uses continuity hints when optional continuity fields are empty', () => {
+    const store = emptyStore()
+    expect(resolveContinuity(store.settings)).toEqual({
+      previousRangeLimit: 3,
+      fandomThreadLimit: 3,
+    })
+
+    store.settings.previousRangeLimit = 6
+    expect(resolveContinuity(store.settings).previousRangeLimit).toBe(6)
+  })
+
+  test('migrates the legacy instruction field into the default preset', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {},
+      settings: { instructions: 'My old prompt' },
+    })
+    expect(store.settings.activeInstructionPresetId).toBe('default')
+    expect(store.settings.instructionPresets).toEqual([
+      { id: 'default', name: 'Default', instructions: 'My old prompt' },
+    ])
+  })
+
   test('keeps the newest configured ranges in chronological order', () => {
     const store = emptyStore()
     store.settings.previousRangeLimit = 3
@@ -76,6 +100,9 @@ describe('Threadverse continuity', () => {
     }
 
     expect(selectPreviousRounds(store, 'chat').map((item) => item.sequence)).toEqual([2, 3, 4])
+
+    store.settings.previousRangeLimit = 0
+    expect(selectPreviousRounds(store, 'chat')).toEqual([])
   })
 
   test('builds story and fandom blocks in chronological order', () => {

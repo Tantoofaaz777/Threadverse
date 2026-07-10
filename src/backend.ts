@@ -3,6 +3,7 @@ import {
   type BackendToFrontendMessage,
   type ChatMessageSummary,
   type ConnectionSummary,
+  type InstructionPreset,
   type ThreadverseSettingsPayload,
 } from './shared'
 import {
@@ -119,6 +120,32 @@ function optionalNumber(
   return requireNumber(value, label, minimum, maximum, integer)
 }
 
+function validateInstructionPresets(value: unknown): InstructionPreset[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('Save at least one instruction preset.')
+  }
+  if (value.length > 50) throw new Error('Instruction presets are limited to 50.')
+
+  const ids = new Set<string>()
+  const names = new Set<string>()
+  return value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object') {
+      throw new Error(`Instruction preset ${index + 1} is invalid.`)
+    }
+    const raw = candidate as Partial<InstructionPreset>
+    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+    const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+    if (!id || ids.has(id)) throw new Error('Instruction preset IDs must be unique.')
+    if (!name || name.length > 100) throw new Error('Instruction preset names must contain 1 to 100 characters.')
+    const normalizedName = name.toLocaleLowerCase()
+    if (names.has(normalizedName)) throw new Error(`An instruction preset named "${name}" already exists.`)
+    if (typeof raw.instructions !== 'string') throw new Error(`Instructions are missing for preset "${name}".`)
+    ids.add(id)
+    names.add(normalizedName)
+    return { id, name, instructions: raw.instructions }
+  })
+}
+
 async function saveSettings(value: unknown, userId: string): Promise<void> {
   if (!value || typeof value !== 'object') throw new Error('Invalid settings payload.')
   if (!spindle.permissions.has('generation')) {
@@ -129,16 +156,24 @@ async function saveSettings(value: unknown, userId: string): Promise<void> {
   const connections = await getConnections(userId)
   const connection = connections.find((candidate) => candidate.id === input.connectionId)
   if (!connection) throw new Error('Choose an available Lumiverse connection.')
+  const instructionPresets = validateInstructionPresets(input.instructionPresets)
+  const activeInstructionPresetId = typeof input.activeInstructionPresetId === 'string'
+    ? input.activeInstructionPresetId
+    : ''
+  if (!instructionPresets.some((preset) => preset.id === activeInstructionPresetId)) {
+    throw new Error('Choose an active instruction preset.')
+  }
 
   const settings: ThreadverseSettingsPayload = {
     connectionId: connection.id,
     maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
     temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
     topP: optionalNumber(input.topP, 'Top P', 0, 1),
-    previousRangeLimit: requireNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
-    fandomThreadLimit: requireNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
+    previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
+    fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
     maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
-    instructions: typeof input.instructions === 'string' ? input.instructions : '',
+    instructionPresets,
+    activeInstructionPresetId,
   }
 
   const store = await loadStore(userId)
@@ -296,6 +331,37 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
 
+    if (payload.type === 'threadverse:request_instruction_preset_name') {
+      const result = await spindle.prompt.input({
+        title: 'New instruction preset',
+        message: 'Save the current instructions as a new preset.',
+        placeholder: 'Preset name...',
+        submitLabel: 'Create',
+        userId,
+      })
+      send({
+        type: 'threadverse:instruction_preset_name',
+        name: result.cancelled || !result.value ? null : result.value.trim(),
+      }, userId)
+      return
+    }
+
+    if (payload.type === 'threadverse:open_instruction_editor') {
+      const result = await spindle.textEditor.open({
+        title: 'Threadverse instructions',
+        value: payload.value,
+        placeholder: 'Describe how the fictional fandom should discuss the story...',
+        userId,
+      })
+      send({
+        type: 'threadverse:instruction_editor_result',
+        presetId: payload.presetId,
+        text: result.text,
+        cancelled: result.cancelled,
+      }, userId)
+      return
+    }
+
     if (payload.type === 'threadverse:save_range') {
       await saveRange(payload, userId)
       return
@@ -311,6 +377,13 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       } catch {
         send({ type: 'threadverse:operation_error', error: message }, userId)
       }
+      return
+    }
+    if (
+      payload.type === 'threadverse:request_instruction_preset_name'
+      || payload.type === 'threadverse:open_instruction_editor'
+    ) {
+      send({ type: 'threadverse:operation_error', error: message }, userId)
       return
     }
     if (payload.type === 'threadverse:save_range' || payload.type === 'threadverse:reset_continuity') {
