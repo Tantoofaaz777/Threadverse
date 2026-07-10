@@ -346,7 +346,6 @@ const STYLES = `
   .threadverse-comment {
     position: relative; padding: 10px 0 0 12px; border-left: 2px solid var(--lumiverse-border);
   }
-  .threadverse-comment:hover { border-left-color: var(--lumiverse-primary-050, var(--lumiverse-primary)); }
   .threadverse-comment-content { min-width: 0; }
   .threadverse-comment-body { margin-top: 6px; }
   .threadverse-comment-replies { margin-left: 5px; }
@@ -1322,7 +1321,7 @@ export function setup(ctx: SpindleFrontendContext) {
         switchTab('feed')
       }
       renderContinuity()
-      renderFeed()
+      if (message.status !== 'completed') renderFeed()
       return
     }
     if (message.type === 'threadverse:operation_error') {
