@@ -24,6 +24,7 @@ The extension currently includes:
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
 - a newest-first round selector, lightweight CSS avatars, nested replies, and collapsible comment trees;
+- per-round regeneration and deletion with native confirmation;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
 

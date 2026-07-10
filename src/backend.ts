@@ -278,6 +278,24 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
   await sendActiveChat(userId, { notice: `Round ${round.sequence} regenerated.` })
 }
 
+async function deleteRound(chatId: string, roundId: string, userId: string): Promise<void> {
+  const activeChat = await spindle.chats.getActive(userId)
+  if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
+  let deletedSequence = 0
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const continuity = store.chats[chatId]
+    const index = continuity?.rounds.findIndex((round) => round.id === roundId) ?? -1
+    if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
+    deletedSequence = continuity.rounds[index].sequence
+    continuity.rounds.splice(index, 1)
+    continuity.rounds.forEach((round, roundIndex) => { round.sequence = roundIndex + 1 })
+    if (continuity.rounds.length === 0) delete store.chats[chatId]
+    await saveStore(store, userId)
+  })
+  await sendActiveChat(userId, { notice: `Round ${deletedSequence} deleted.` })
+}
+
 async function resetContinuity(chatId: string, userId: string): Promise<void> {
   const activeChat = await spindle.chats.getActive(userId)
   if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
@@ -308,6 +326,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     if (payload.type === 'threadverse:generate_thread') { await generateThread(payload, userId); return }
     if (payload.type === 'threadverse:regenerate_thread') { await regenerateThread(payload.chatId, payload.roundId, userId); return }
+    if (payload.type === 'threadverse:delete_round') { await deleteRound(payload.chatId, payload.roundId, userId); return }
     if (payload.type === 'threadverse:cancel_generation') { activeGenerations.get(userId)?.abort(); return }
     await resetContinuity(payload.chatId, userId)
   } catch (error) {
@@ -320,7 +339,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     if (payload.type === 'threadverse:generate_thread' || payload.type === 'threadverse:regenerate_thread') {
       send({ type: 'threadverse:generation_state', status: error instanceof Error && error.name === 'AbortError' ? 'cancelled' : 'error', error: error instanceof Error && error.name === 'AbortError' ? undefined : message }, userId); return
     }
-    if (payload.type === 'threadverse:reset_continuity') { send({ type: 'threadverse:operation_error', error: message }, userId); return }
+    if (payload.type === 'threadverse:reset_continuity' || payload.type === 'threadverse:delete_round') { send({ type: 'threadverse:operation_error', error: message }, userId); return }
     spindle.toast.error(message, { userId }); send({ type: 'threadverse:operation_error', error: message }, userId)
   }
 })

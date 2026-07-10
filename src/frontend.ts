@@ -310,7 +310,7 @@ const STYLES = `
   }
 
   .threadverse-feed-stack { display: grid; gap: 10px; }
-  .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
   .threadverse-feed-select {
     min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--lumiverse-border);
     border-radius: var(--lumiverse-radius); background: var(--lumiverse-secondary, var(--lumiverse-fill-subtle));
@@ -1074,7 +1074,14 @@ export function setup(ctx: SpindleFrontendContext) {
     regenerateButton.dataset.roundId = round.id
     regenerateButton.disabled = generationPending
     regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
-    toolbar.append(select, regenerateButton)
+    const deleteButton = document.createElement('button')
+    deleteButton.type = 'button'
+    deleteButton.className = 'threadverse-button'
+    deleteButton.dataset.action = 'delete-round'
+    deleteButton.dataset.roundId = round.id
+    deleteButton.disabled = generationPending
+    deleteButton.textContent = 'Delete'
+    toolbar.append(select, regenerateButton, deleteButton)
     feedList.appendChild(toolbar)
 
     if (generationPending) {
@@ -1255,6 +1262,21 @@ export function setup(ctx: SpindleFrontendContext) {
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
 
+  async function deleteRound(roundId: string): Promise<void> {
+    if (!activeChat || generationPending || operationPending) return
+    const round = feeds.find((candidate) => candidate.id === roundId)
+    if (!round) return
+    const result = await ctx.ui.showConfirm({
+      title: 'Delete continuity round',
+      message: `Delete Round ${round.sequence}? Its messages will become available in Make again.`,
+      variant: 'danger',
+      confirmLabel: 'Delete',
+    })
+    if (!result.confirmed || !activeChat) return
+    operationPending = true
+    send({ type: 'threadverse:delete_round', chatId: activeChat.id, roundId })
+  }
+
   function resetContinuity(): void {
     if (!activeChat || operationPending) return
     operationPending = true
@@ -1282,6 +1304,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'save') generateSelectedRange()
     if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
     if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
+    if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'collapse-comment') {
       const commentId = target.closest<HTMLElement>('[data-comment-id]')!.dataset.commentId!
       if (collapsedComments.has(commentId)) collapsedComments.delete(commentId)

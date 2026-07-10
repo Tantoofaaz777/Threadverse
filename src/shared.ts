@@ -102,6 +102,7 @@ export type FrontendToBackendMessage =
       endMessageId: string
     }
   | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string }
+  | { type: 'threadverse:delete_round'; chatId: string; roundId: string }
   | { type: 'threadverse:cancel_generation' }
   | { type: 'threadverse:reset_continuity'; chatId: string }
 
@@ -155,6 +156,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:generate_thread'
     || type === 'threadverse:regenerate_thread'
+    || type === 'threadverse:delete_round'
     || type === 'threadverse:cancel_generation'
     || type === 'threadverse:reset_continuity'
 }
