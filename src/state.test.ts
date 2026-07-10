@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
 import { parseThreadverseFeed } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
+import { shouldAutoOpenGeneratedFeed } from './generation-navigation'
 import {
   DEFAULT_SETTINGS,
   applyAutomaticSettings,
@@ -30,6 +31,27 @@ function round(sequence: number): StoredRound {
 }
 
 describe('Threadverse continuity', () => {
+  test('only auto-opens a completed feed when its chat was never left', () => {
+    expect(shouldAutoOpenGeneratedFeed({
+      completedChatId: 'chat-a',
+      activeChatId: 'chat-a',
+      generationChatId: 'chat-a',
+      leftOrigin: false,
+    })).toBe(true)
+    expect(shouldAutoOpenGeneratedFeed({
+      completedChatId: 'chat-a',
+      activeChatId: 'chat-a',
+      generationChatId: 'chat-a',
+      leftOrigin: true,
+    })).toBe(false)
+    expect(shouldAutoOpenGeneratedFeed({
+      completedChatId: 'chat-a',
+      activeChatId: 'chat-b',
+      generationChatId: 'chat-a',
+      leftOrigin: false,
+    })).toBe(false)
+  })
+
   test('clicking either selected endpoint toggles only that endpoint off', () => {
     expect(toggleRangeEndpoint({ startIndex: 4, endIndex: 9 }, 9)).toEqual({
       startIndex: 4,

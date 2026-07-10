@@ -16,6 +16,7 @@ import type {
   ThreadverseTab,
 } from './shared'
 import { toggleRangeEndpoint } from './range-selection'
+import { shouldAutoOpenGeneratedFeed } from './generation-navigation'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -653,6 +654,8 @@ export function setup(ctx: SpindleFrontendContext) {
   let endIndex: number | null = null
   let operationPending = false
   let generationPending = false
+  let generationChatId: string | null = null
+  let generationLeftOrigin = false
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -1306,11 +1309,28 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!activeChat || chatId === activeChat.id) scheduleChatRefresh()
   }
 
+  function handleChatSwitched(payload: unknown): void {
+    const nextChatId = payload && typeof payload === 'object'
+      ? (payload as { chatId?: unknown }).chatId
+      : undefined
+    if (
+      (generationPending || operationPending)
+      && generationChatId
+      && (typeof nextChatId === 'string' || nextChatId === null)
+      && nextChatId !== generationChatId
+    ) {
+      generationLeftOrigin = true
+    }
+    scheduleChatRefresh()
+  }
+
   function generateSelectedRange(): void {
     const bounds = selectedBounds()
     if (!bounds || !activeChat || operationPending) return
 
     operationPending = true
+    generationChatId = activeChat.id
+    generationLeftOrigin = false
     clearError()
     renderContinuity()
     send({
@@ -1324,6 +1344,8 @@ export function setup(ctx: SpindleFrontendContext) {
   function regenerate(roundId: string): void {
     if (!activeChat || generationPending) return
     operationPending = true
+    generationChatId = activeChat.id
+    generationLeftOrigin = false
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
 
@@ -1385,16 +1407,29 @@ export function setup(ctx: SpindleFrontendContext) {
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:generation_state') {
+      const started = message.status === 'started'
+      const shouldOpenCompletedFeed = message.status === 'completed'
+        && shouldAutoOpenGeneratedFeed({
+          completedChatId: message.chatId,
+          activeChatId: activeChat?.id ?? null,
+          generationChatId,
+          leftOrigin: generationLeftOrigin,
+        })
+      if (started) {
+        if (generationChatId !== message.chatId) generationLeftOrigin = false
+        generationChatId = message.chatId
+      }
       generationPending = message.status === 'started'
       operationPending = generationPending
       cancelButton.hidden = !generationPending
       saveButton.textContent = generationPending ? 'Generating...' : 'Generate Thread'
       if (message.status === 'completed') {
         if (message.roundId) selectedFeedRoundId = message.roundId
-        switchTab('feed')
+        if (shouldOpenCompletedFeed) switchTab('feed')
       }
       renderContinuity()
-      if (message.status !== 'completed') renderFeed()
+      if (message.status !== 'completed' || !shouldOpenCompletedFeed) renderFeed()
+      if (!generationPending) generationChatId = null
       return
     }
     if (message.type === 'threadverse:operation_error') {
@@ -1485,7 +1520,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const unsubscribeActivate = drawer.onActivate(loadActiveChat)
   const chatEventUnsubscribers = [
-    ctx.events.on('CHAT_SWITCHED', scheduleChatRefresh),
+    ctx.events.on('CHAT_SWITCHED', handleChatSwitched),
     ctx.events.on('MESSAGE_SENT', scheduleActiveChatRefresh),
     ctx.events.on('MESSAGE_EDITED', scheduleActiveChatRefresh),
     ctx.events.on('MESSAGE_DELETED', scheduleActiveChatRefresh),

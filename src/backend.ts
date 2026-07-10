@@ -151,12 +151,17 @@ async function savePromptSettings(value: unknown, userId: string): Promise<void>
   send({ type: 'threadverse:settings_save_result', scope: 'prompt' }, userId)
 }
 
-async function sendActiveChat(userId: string, options?: { notice?: string; error?: string }): Promise<void> {
+async function sendActiveChat(
+  userId: string,
+  options?: { notice?: string; error?: string },
+  expectedChatId?: string,
+): Promise<void> {
   if (!hasChatPermissions()) {
     send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
     return
   }
   const activeChat = await spindle.chats.getActive(userId)
+  if (expectedChatId && activeChat?.id !== expectedChatId) return
   if (!activeChat) {
     send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], error: 'Open a roleplay chat, then refresh this list.' }, userId)
     return
@@ -208,7 +213,7 @@ async function runGeneration(store: ThreadverseStore, chatId: string, recent: Ch
   const samplers = resolveSamplers(store.settings)
   const controller = new AbortController()
   activeGenerations.set(userId, controller)
-  send({ type: 'threadverse:generation_state', status: 'started' }, userId)
+  send({ type: 'threadverse:generation_state', status: 'started', chatId }, userId)
   try {
     const result = await spindle.generate.quiet({
       type: 'quiet', userId, connection_id: connectionId,
@@ -257,8 +262,10 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
     await saveStore(latest, userId)
   })
-  send({ type: 'threadverse:generation_state', status: 'completed', roundId: round.id }, userId)
-  await sendActiveChat(userId, { notice: `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.` })
+  send({ type: 'threadverse:generation_state', status: 'completed', chatId: selection.chat.id, roundId: round.id }, userId)
+  await sendActiveChat(userId, {
+    notice: `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
+  }, selection.chat.id)
 }
 
 async function regenerateThread(chatId: string, roundId: string, userId: string): Promise<void> {
@@ -274,8 +281,8 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
     if (!target) throw new Error('That continuity round was removed while generation was running.')
     target.feed = feed; await saveStore(latest, userId)
   })
-  send({ type: 'threadverse:generation_state', status: 'completed', roundId }, userId)
-  await sendActiveChat(userId, { notice: `Round ${round.sequence} regenerated.` })
+  send({ type: 'threadverse:generation_state', status: 'completed', chatId, roundId }, userId)
+  await sendActiveChat(userId, { notice: `Round ${round.sequence} regenerated.` }, chatId)
 }
 
 async function deleteRound(chatId: string, roundId: string, userId: string): Promise<void> {
@@ -339,7 +346,11 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     if (payload.type === 'threadverse:generate_thread' || payload.type === 'threadverse:regenerate_thread') {
       const cancelled = error instanceof Error && error.name === 'AbortError'
       if (!cancelled) spindle.toast.error(message, { userId })
-      send({ type: 'threadverse:generation_state', status: cancelled ? 'cancelled' : 'error' }, userId); return
+      send({
+        type: 'threadverse:generation_state',
+        status: cancelled ? 'cancelled' : 'error',
+        chatId: payload.chatId,
+      }, userId); return
     }
     if (payload.type === 'threadverse:reset_continuity' || payload.type === 'threadverse:delete_round') { send({ type: 'threadverse:operation_error', error: message }, userId); return }
     spindle.toast.error(message, { userId }); send({ type: 'threadverse:operation_error', error: message }, userId)
