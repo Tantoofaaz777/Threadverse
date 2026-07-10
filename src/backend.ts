@@ -9,7 +9,7 @@ function send(payload: BackendToFrontendMessage, userId?: string): void {
   spindle.sendToFrontend(payload, userId)
 }
 
-spindle.onFrontendMessage(async (payload: unknown, userId?: string) => {
+spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   if (!isFrontendMessage(payload)) return
 
   if (payload.type === 'threadverse:get_status') {
@@ -29,7 +29,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId?: string) => {
   }
 
   try {
-    const activeChat = await spindle.chats.getActive()
+    const activeChat = await spindle.chats.getActive(userId)
     if (!activeChat) {
       send({
         type: 'threadverse:active_chat',
@@ -68,4 +68,3 @@ spindle.permissions.onChanged(({ permission, granted }) => {
 })
 
 spindle.log.info('[Threadverse] Backend ready')
-
