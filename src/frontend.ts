@@ -311,11 +311,7 @@ const STYLES = `
 
   .threadverse-feed-stack { display: grid; gap: 10px; }
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
-  .threadverse-feed-select {
-    min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--lumiverse-border);
-    border-radius: var(--lumiverse-radius); background: var(--lumiverse-secondary, var(--lumiverse-fill-subtle));
-    color: var(--lumiverse-text); font: inherit; font-size: 11px;
-  }
+  .threadverse-feed-round-select { min-width: 0; }
   .threadverse-reddit { overflow: hidden; padding: 0; }
   .threadverse-reddit-community {
     padding: 10px 12px; border-bottom: 1px solid var(--lumiverse-border);
@@ -364,14 +360,6 @@ const STYLES = `
   .threadverse-comment-content { min-width: 0; }
   .threadverse-comment-body { margin-top: 6px; }
   .threadverse-comment-replies { margin-left: 5px; }
-  .threadverse-collapse {
-    padding: 0; border: 0; background: transparent; color: var(--lumiverse-text-muted);
-    cursor: pointer; font: inherit; font-size: 9px;
-  }
-  .threadverse-comment.is-collapsed > .threadverse-comment-content > :not(.threadverse-author-row),
-  .threadverse-comment.is-collapsed > .threadverse-comment-replies { display: none; }
-  .threadverse-comment.is-collapsed { padding-bottom: 2px; opacity: .72; }
-
   @media (max-width: 420px) {
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
@@ -652,7 +640,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let rounds: RoundSummary[] = []
   let feeds: FeedRound[] = []
   let selectedFeedRoundId: string | null = null
-  const collapsedComments = new Set<string>()
+  let feedRoundHandle: SpindleSelectHandle | null = null
   let startIndex: number | null = null
   let endIndex: number | null = null
   let operationPending = false
@@ -993,19 +981,9 @@ export function setup(ctx: SpindleFrontendContext) {
       .slice(0, 2).map((part) => part[0]).join('').slice(0, 2) || '?'
   }
 
-  function authorRow(username: string, flair: string | null, timestamp: string | null, collapseId?: string): HTMLElement {
+  function authorRow(username: string, flair: string | null, timestamp: string | null): HTMLElement {
     const row = document.createElement('div')
     row.className = 'threadverse-author-row'
-    if (collapseId) {
-      const collapse = document.createElement('button')
-      collapse.type = 'button'
-      collapse.className = 'threadverse-collapse'
-      collapse.dataset.action = 'collapse-comment'
-      collapse.dataset.commentId = collapseId
-      collapse.textContent = collapsedComments.has(collapseId) ? '[+]' : '[−]'
-      collapse.title = collapsedComments.has(collapseId) ? 'Expand comment' : 'Collapse comment'
-      row.appendChild(collapse)
-    }
     const avatar = document.createElement('span')
     avatar.className = 'threadverse-avatar'
     avatar.style.setProperty('--avatar-hue', String(avatarHue(username)))
@@ -1090,15 +1068,13 @@ export function setup(ctx: SpindleFrontendContext) {
     return actions
   }
 
-  function renderComment(comment: ThreadverseComment, roundId: string, path: string, depth: number): HTMLElement {
-    const collapseId = `${roundId}:${path}:${comment.id}`
+  function renderComment(comment: ThreadverseComment, depth: number): HTMLElement {
     const element = document.createElement('article')
     element.className = 'threadverse-comment'
     if (depth === 0) element.classList.add('threadverse-comment--root')
-    if (collapsedComments.has(collapseId)) element.classList.add('is-collapsed')
     const content = document.createElement('div')
     content.className = 'threadverse-comment-content'
-    content.appendChild(authorRow(comment.username, comment.flair, comment.timestamp, collapseId))
+    content.appendChild(authorRow(comment.username, comment.flair, comment.timestamp))
     const body = document.createElement('p')
     body.className = 'threadverse-comment-body'
     body.textContent = comment.body
@@ -1107,7 +1083,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (comment.replies.length > 0) {
       const replies = document.createElement('div')
       replies.className = 'threadverse-comment-replies'
-      comment.replies.forEach((reply, index) => replies.appendChild(renderComment(reply, roundId, `${path}.${index}`, depth + 1)))
+      comment.replies.forEach((reply) => replies.appendChild(renderComment(reply, depth + 1)))
       element.appendChild(replies)
     }
     return element
@@ -1118,6 +1094,8 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function renderFeed(): void {
+    feedRoundHandle?.destroy()
+    feedRoundHandle = null
     feedList.replaceChildren()
     if (feeds.length === 0) {
       const empty = document.createElement('div')
@@ -1132,17 +1110,8 @@ export function setup(ctx: SpindleFrontendContext) {
     const round = feeds.find((item) => item.id === selectedFeedRoundId)!
     const toolbar = document.createElement('div')
     toolbar.className = 'threadverse-feed-toolbar'
-    const select = document.createElement('select')
-    select.className = 'threadverse-feed-select'
-    select.dataset.feedRoundSelect = ''
-    select.setAttribute('aria-label', 'Choose a continuity round')
-    for (const optionRound of [...feeds].reverse()) {
-      const option = document.createElement('option')
-      option.value = optionRound.id
-      option.selected = optionRound.id === round.id
-      option.textContent = `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})${optionRound.feed ? '' : ' · no feed'}`
-      select.appendChild(option)
-    }
+    const selectTarget = document.createElement('div')
+    selectTarget.className = 'threadverse-feed-round-select'
     const regenerateButton = document.createElement('button')
     regenerateButton.type = 'button'
     regenerateButton.className = 'threadverse-button'
@@ -1157,8 +1126,23 @@ export function setup(ctx: SpindleFrontendContext) {
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending
     deleteButton.textContent = 'Delete'
-    toolbar.append(select, regenerateButton, deleteButton)
+    toolbar.append(selectTarget, regenerateButton, deleteButton)
     feedList.appendChild(toolbar)
+    feedRoundHandle = ctx.components.mountSelect(selectTarget, {
+      value: round.id,
+      triggerClassName: 'threadverse-secondary-input',
+      searchThreshold: 6,
+      searchPlaceholder: 'Search rounds...',
+      options: [...feeds].reverse().map((optionRound) => ({
+        value: optionRound.id,
+        label: `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})`,
+        sublabel: optionRound.feed ? undefined : 'No feed generated',
+      })),
+      onChange: (roundId) => {
+        selectedFeedRoundId = roundId
+        renderFeed()
+      },
+    })
 
     if (generationPending) {
       const status = document.createElement('div')
@@ -1194,7 +1178,7 @@ export function setup(ctx: SpindleFrontendContext) {
     post.append(title, body, redditActions(feed.post.score, totalComments(feed.comments)))
     const comments = document.createElement('section')
     comments.className = 'threadverse-comments'
-    feed.comments.forEach((comment, index) => comments.appendChild(renderComment(comment, round.id, String(index), 0)))
+    feed.comments.forEach((comment) => comments.appendChild(renderComment(comment, 0)))
     card.append(community, post, comments)
     feedList.appendChild(card)
   }
@@ -1378,12 +1362,6 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
     if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
-    if (action === 'collapse-comment') {
-      const commentId = target.closest<HTMLElement>('[data-comment-id]')!.dataset.commentId!
-      if (collapsedComments.has(commentId)) collapsedComments.delete(commentId)
-      else collapsedComments.add(commentId)
-      renderFeed()
-    }
     if (action === 'reset') resetContinuity()
     if (action === 'save-prompt') savePrompt()
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
@@ -1391,15 +1369,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'expand-instructions') expandInstructions()
   }
 
-  const onFeedRoundChange = (event: Event) => {
-    const select = (event.target as Element).closest<HTMLSelectElement>('[data-feed-round-select]')
-    if (!select) return
-    selectedFeedRoundId = select.value
-    renderFeed()
-  }
-
   shell.addEventListener('click', onClick)
-  shell.addEventListener('change', onFeedRoundChange)
   search.addEventListener('input', renderMessages)
   unusedOnly.addEventListener('change', renderMessages)
   maintainFandomToggle.addEventListener('change', handleMaintainFandomChange)
@@ -1525,7 +1495,7 @@ export function setup(ctx: SpindleFrontendContext) {
     for (const unsubscribe of chatEventUnsubscribers) unsubscribe()
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)
-    shell.removeEventListener('change', onFeedRoundChange)
+    feedRoundHandle?.destroy()
     search.removeEventListener('input', renderMessages)
     unusedOnly.removeEventListener('change', renderMessages)
     maintainFandomToggle.removeEventListener('change', handleMaintainFandomChange)

@@ -23,7 +23,7 @@ The extension currently includes:
 - tolerant validation of the model's JSON feed response;
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
-- a newest-first round selector, lightweight CSS avatars, nested replies, and collapsible comment trees;
+- a newest-first native round selector, lightweight CSS avatars, and nested replies;
 - per-round regeneration and deletion with native confirmation;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
