@@ -3,6 +3,7 @@ import type {
   BackendToFrontendMessage,
   ChatMessageSummary,
   FrontendToBackendMessage,
+  RoundSummary,
   ThreadverseTab,
 } from './shared'
 
@@ -81,6 +82,64 @@ const STYLES = `
     line-height: 1.45;
   }
 
+  .threadverse-context {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lumiverse-radius);
+    background: var(--lumiverse-fill-subtle);
+  }
+
+  .threadverse-context-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .threadverse-chat-name {
+    overflow: hidden;
+    color: var(--lumiverse-text);
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .threadverse-context-row {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .threadverse-context-label {
+    color: var(--lumiverse-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .threadverse-context-value {
+    color: var(--lumiverse-text);
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
+  .threadverse-context-value.is-recent { color: var(--lumiverse-success, #22c55e); }
+
+  .threadverse-notice {
+    min-height: 16px;
+    margin: 6px 0 0;
+    color: var(--lumiverse-success, #22c55e);
+    font-size: 10px;
+  }
+
+  .threadverse-notice.is-error { color: var(--lumiverse-danger, #ef4444); }
+
   .threadverse-toolbar {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -102,6 +161,9 @@ const STYLES = `
   .threadverse-search { padding: 8px 10px; }
   .threadverse-button { padding: 8px 11px; cursor: pointer; }
   .threadverse-button:hover { border-color: var(--lumiverse-accent); }
+  .threadverse-button:disabled { cursor: not-allowed; opacity: .5; }
+
+  .threadverse-button--compact { padding: 5px 8px; font-size: 9px; }
 
   .threadverse-button--primary {
     background: var(--lumiverse-accent);
@@ -136,8 +198,17 @@ const STYLES = `
 
   .threadverse-message:last-child { border-bottom: 0; }
   .threadverse-message:hover { background: var(--lumiverse-fill-subtle); }
-  .threadverse-message.is-selected { background: color-mix(in srgb, var(--lumiverse-accent) 12%, transparent); }
-  .threadverse-message.is-endpoint { box-shadow: inset 3px 0 0 var(--lumiverse-accent); }
+  .threadverse-message.is-selected { background: var(--lumiverse-success-015, rgba(34, 197, 94, .15)); }
+  .threadverse-message.is-endpoint { box-shadow: inset 3px 0 0 var(--lumiverse-success, #22c55e); }
+
+  .threadverse-message-marker {
+    display: block;
+    margin-top: 3px;
+    color: var(--lumiverse-success, #22c55e);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .04em;
+  }
 
   .threadverse-message-index,
   .threadverse-message-role {
@@ -207,17 +278,32 @@ export function setup(ctx: SpindleFrontendContext) {
       <div class="threadverse-card">
         <h2 class="threadverse-eyebrow">Select a scene</h2>
         <p class="threadverse-copy">Choose the first and last messages of the range you want the fandom to discuss.</p>
+        <div class="threadverse-context">
+          <div class="threadverse-context-header">
+            <span class="threadverse-chat-name" data-chat-name>No active chat</span>
+            <button class="threadverse-button threadverse-button--compact" type="button" data-action="reset" disabled>Reset continuity</button>
+          </div>
+          <div class="threadverse-context-row">
+            <span class="threadverse-context-label">Previous context</span>
+            <span class="threadverse-context-value" data-previous-context>None yet</span>
+          </div>
+          <div class="threadverse-context-row">
+            <span class="threadverse-context-label">Recent context</span>
+            <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
+          </div>
+        </div>
         <div class="threadverse-toolbar">
-          <input class="threadverse-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
+          <input class="threadverse-search" type="search" placeholder="Search messages..." aria-label="Search messages" />
           <button class="threadverse-button" type="button" data-action="refresh">Refresh</button>
         </div>
         <div class="threadverse-message-list">
-          <div class="threadverse-empty" data-message-state>Loading the active chat…</div>
+          <div class="threadverse-empty" data-message-state>Loading the active chat...</div>
         </div>
         <p class="threadverse-summary" data-selection-summary>0 messages selected</p>
+        <p class="threadverse-notice" data-notice></p>
         <div class="threadverse-actions">
           <button class="threadverse-button" type="button" data-action="clear">Clear</button>
-          <button class="threadverse-button threadverse-button--primary" type="button" data-action="generate" disabled>Generate Thread</button>
+          <button class="threadverse-button threadverse-button--primary" type="button" data-action="save" disabled>Save Range</button>
         </div>
       </div>
     </section>
@@ -247,12 +333,20 @@ export function setup(ctx: SpindleFrontendContext) {
   const messageList = shell.querySelector<HTMLElement>('.threadverse-message-list')!
   const search = shell.querySelector<HTMLInputElement>('.threadverse-search')!
   const summary = shell.querySelector<HTMLElement>('[data-selection-summary]')!
-  const generateButton = shell.querySelector<HTMLButtonElement>('[data-action="generate"]')!
+  const saveButton = shell.querySelector<HTMLButtonElement>('[data-action="save"]')!
+  const resetButton = shell.querySelector<HTMLButtonElement>('[data-action="reset"]')!
+  const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
+  const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
+  const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
+  const notice = shell.querySelector<HTMLElement>('[data-notice]')!
 
   let activeTab: ThreadverseTab = 'make'
+  let activeChat: { id: string; name: string } | null = null
   let messages: ChatMessageSummary[] = []
+  let rounds: RoundSummary[] = []
   let startIndex: number | null = null
   let endIndex: number | null = null
+  let operationPending = false
 
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
 
@@ -271,13 +365,29 @@ export function setup(ctx: SpindleFrontendContext) {
     const bounds = selectedBounds()
     if (!bounds) {
       summary.textContent = startIndex === null ? '0 messages selected' : 'Choose an ending message'
-      generateButton.disabled = true
+      recentContext.textContent = startIndex === null
+        ? 'Select a range below'
+        : `Start #${messages[startIndex]?.index} selected; choose the end`
+      saveButton.disabled = true
       return
     }
 
     const count = bounds[1] - bounds[0] + 1
-    summary.textContent = `${count} message${count === 1 ? '' : 's'} selected · #${messages[bounds[0]]?.index}–#${messages[bounds[1]]?.index}`
-    generateButton.disabled = false
+    const rangeLabel = `#${messages[bounds[0]]?.index}-#${messages[bounds[1]]?.index}`
+    summary.textContent = `${count} message${count === 1 ? '' : 's'} selected · ${rangeLabel}`
+    recentContext.textContent = `${rangeLabel} · ${count} message${count === 1 ? '' : 's'}`
+    saveButton.disabled = operationPending || !activeChat
+  }
+
+  function renderContinuity(): void {
+    chatName.textContent = activeChat?.name ?? 'No active chat'
+    previousContext.textContent = rounds.length === 0
+      ? 'None yet'
+      : rounds
+        .map((round) => `Round ${round.sequence} (#${round.startIndex}-#${round.endIndex})`)
+        .join(' -> ')
+    resetButton.disabled = operationPending || !activeChat || rounds.length === 0
+    updateSummary()
   }
 
   function renderMessages(): void {
@@ -310,6 +420,16 @@ export function setup(ctx: SpindleFrontendContext) {
       const index = document.createElement('span')
       index.className = 'threadverse-message-index'
       index.textContent = `#${message.index}`
+      if (absoluteIndex === startIndex || absoluteIndex === endIndex) {
+        const marker = document.createElement('span')
+        marker.className = 'threadverse-message-marker'
+        marker.textContent = bounds
+          ? bounds[0] === bounds[1]
+            ? 'START / END'
+            : absoluteIndex === bounds[0] ? 'START' : 'END'
+          : 'START'
+        index.appendChild(marker)
+      }
 
       const role = document.createElement('span')
       role.className = 'threadverse-message-role'
@@ -333,8 +453,35 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function loadActiveChat(): void {
-    messageList.innerHTML = '<div class="threadverse-empty">Loading the active chat…</div>'
+    notice.textContent = ''
+    notice.classList.remove('is-error')
+    messageList.innerHTML = '<div class="threadverse-empty">Loading the active chat...</div>'
     send({ type: 'threadverse:load_active_chat' })
+  }
+
+  function saveSelectedRange(): void {
+    const bounds = selectedBounds()
+    if (!bounds || !activeChat || operationPending) return
+
+    operationPending = true
+    notice.textContent = 'Saving range...'
+    notice.classList.remove('is-error')
+    renderContinuity()
+    send({
+      type: 'threadverse:save_range',
+      chatId: activeChat.id,
+      startMessageId: messages[bounds[0]].id,
+      endMessageId: messages[bounds[1]].id,
+    })
+  }
+
+  function resetContinuity(): void {
+    if (!activeChat || operationPending) return
+    operationPending = true
+    notice.textContent = 'Resetting continuity...'
+    notice.classList.remove('is-error')
+    renderContinuity()
+    send({ type: 'threadverse:reset_continuity', chatId: activeChat.id })
   }
 
   const onClick = (event: Event) => {
@@ -361,6 +508,8 @@ export function setup(ctx: SpindleFrontendContext) {
     const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
     if (action === 'refresh') loadActiveChat()
     if (action === 'clear') clearSelection()
+    if (action === 'save') saveSelectedRange()
+    if (action === 'reset') resetContinuity()
   }
 
   shell.addEventListener('click', onClick)
@@ -368,13 +517,28 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
+    if (message.type === 'threadverse:operation_error') {
+      operationPending = false
+      notice.textContent = message.error
+      notice.classList.add('is-error')
+      renderContinuity()
+      return
+    }
+
     if (message.type === 'threadverse:active_chat') {
+      operationPending = false
+      activeChat = message.chat
       messages = message.messages
+      rounds = message.rounds
       startIndex = null
       endIndex = null
+      notice.textContent = message.notice ?? ''
+      notice.classList.toggle('is-error', Boolean(message.error))
+      renderContinuity()
       renderMessages()
 
-      if (message.error) {
+      if (message.error && !message.chat) {
+        notice.textContent = ''
         messageList.replaceChildren()
         const error = document.createElement('div')
         error.className = 'threadverse-empty'
@@ -397,4 +561,3 @@ export function setup(ctx: SpindleFrontendContext) {
     ctx.dom.cleanup()
   }
 }
-

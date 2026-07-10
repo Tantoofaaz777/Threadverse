@@ -8,12 +8,14 @@ This is the initial scaffold. It includes:
 
 - a Lumiverse drawer tab;
 - the `Feed`, `Make`, and `Settings` navigation shell;
-- active-chat message loading and range-selection groundwork;
+- active-chat message loading and success-themed range selection;
+- per-user, per-chat chronological round persistence;
+- previous/recent context display and continuity reset controls;
 - a prompt builder for chronological story and fandom continuity;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
 
-Generation, persistence, continuity controls, and the final Reddit-inspired feed renderer are intentionally not implemented yet.
+LLM generation, editable settings, fandom-thread persistence, and the final Reddit-inspired feed renderer are intentionally not implemented yet. Until generation is connected, **Save Range** advances story continuity for testing.
 
 ## Development
 
