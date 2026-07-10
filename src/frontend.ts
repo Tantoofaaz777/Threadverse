@@ -460,7 +460,7 @@ export function setup(ctx: SpindleFrontendContext) {
         <div class="threadverse-toolbar">
           <input class="threadverse-search" type="search" placeholder="Search messages..." aria-label="Search messages" />
           <label class="threadverse-filter-toggle">
-            <input type="checkbox" data-unused-only />
+            <input type="checkbox" data-unused-only checked />
             <span class="threadverse-switch-track" aria-hidden="true"></span>
             <span>Unused only</span>
           </label>
@@ -517,7 +517,10 @@ export function setup(ctx: SpindleFrontendContext) {
             </label>
             <div class="threadverse-settings-field threadverse-settings-field--wide threadverse-switch-field">
               <span class="threadverse-settings-label">Maintain fandom continuity</span>
-              <div data-setting="maintain-fandom"></div>
+              <label class="threadverse-filter-toggle">
+                <input type="checkbox" data-maintain-fandom />
+                <span class="threadverse-switch-track" aria-hidden="true"></span>
+              </label>
             </div>
           </div>
         </section>
@@ -564,6 +567,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
+  const maintainFandomToggle = shell.querySelector<HTMLInputElement>('[data-maintain-fandom]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -577,6 +581,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
   let defaultInstructions = ''
+  let fandomThreadsHandle: SpindleNumericInputHandle | null = null
   let instructionPresetHandle: SpindleSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let settingsComponents: Array<{ destroy(): void }> = []
@@ -600,6 +605,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function destroySettingsComponents(): void {
     for (const component of settingsComponents) component.destroy()
     settingsComponents = []
+    fandomThreadsHandle = null
     instructionPresetHandle = null
     instructionsHandle = null
   }
@@ -620,8 +626,6 @@ export function setup(ctx: SpindleFrontendContext) {
       instructionPresets: settings.instructionPresets.map((preset) => ({ ...preset })),
     }
     settingsConnections = connections
-    let fandomThreadsHandle: SpindleNumericInputHandle | null = null
-
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
@@ -726,17 +730,7 @@ export function setup(ctx: SpindleFrontendContext) {
       },
     })
 
-    const fandomSwitchHandle = ctx.components.mountSwitch(settingTarget('maintain-fandom'), {
-      checked: settingsDraft.maintainFandomContinuity,
-      size: 'sm',
-      ariaLabel: 'Maintain fandom continuity',
-      onChange: (checked) => {
-        if (!settingsDraft) return
-        settingsDraft.maintainFandomContinuity = checked
-        fandomThreadsHandle?.update({ disabled: !checked })
-        scheduleAutomaticSave()
-      },
-    })
+    maintainFandomToggle.checked = settingsDraft.maintainFandomContinuity
 
     const activePreset = getActiveInstructionPreset() ?? settingsDraft.instructionPresets[0]
     settingsDraft.activeInstructionPresetId = activePreset.id
@@ -776,7 +770,6 @@ export function setup(ctx: SpindleFrontendContext) {
       topPHandle,
       previousRangesHandle,
       fandomThreadsHandle,
-      fandomSwitchHandle,
       instructionPresetHandle,
       instructionsHandle,
     ]
@@ -803,6 +796,13 @@ export function setup(ctx: SpindleFrontendContext) {
         },
       })
     }, 350)
+  }
+
+  function handleMaintainFandomChange(): void {
+    if (!settingsDraft) return
+    settingsDraft.maintainFandomContinuity = maintainFandomToggle.checked
+    fandomThreadsHandle?.update({ disabled: !maintainFandomToggle.checked })
+    scheduleAutomaticSave()
   }
 
   function savePrompt(): void {
@@ -1051,6 +1051,7 @@ export function setup(ctx: SpindleFrontendContext) {
   shell.addEventListener('click', onClick)
   search.addEventListener('input', renderMessages)
   unusedOnly.addEventListener('change', renderMessages)
+  maintainFandomToggle.addEventListener('change', handleMaintainFandomChange)
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
@@ -1141,6 +1142,7 @@ export function setup(ctx: SpindleFrontendContext) {
     shell.removeEventListener('click', onClick)
     search.removeEventListener('input', renderMessages)
     unusedOnly.removeEventListener('change', renderMessages)
+    maintainFandomToggle.removeEventListener('change', handleMaintainFandomChange)
     destroySettingsComponents()
     drawer.destroy()
     removeStyle()
