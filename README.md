@@ -4,7 +4,7 @@ Threadverse is a Lumiverse Spindle extension for turning selected roleplay scene
 
 ## Current state
 
-This is the initial scaffold. It includes:
+The extension currently includes:
 
 - a Lumiverse drawer tab;
 - the `Feed`, `Make`, and `Settings` navigation shell;
@@ -17,10 +17,16 @@ This is the initial scaffold. It includes:
 - named instruction presets with the native expanded Lumiverse text editor;
 - automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
 - a prompt builder for chronological story and fandom continuity;
+- generation through the selected Lumiverse connection;
+- isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
+- cancellable generation with atomic round persistence;
+- tolerant validation of the model's JSON feed response;
+- feed regeneration that replaces the existing result without duplicating its round;
+- a temporary JSON feed preview ahead of the Reddit-inspired renderer;
 - backend/frontend messaging;
 - TypeScript type checking and Bun build scripts.
 
-LLM generation, fandom-thread persistence, and the final Reddit-inspired feed renderer are intentionally not implemented yet. Until generation is connected, **Save Range** advances story continuity for testing.
+The final Reddit-inspired feed renderer is planned for stage 4B. The current Feed tab intentionally shows the validated JSON so the generation contract can be tested first.
 
 ## Development
 

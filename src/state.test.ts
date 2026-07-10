@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
+import { parseThreadverseFeed } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import {
   DEFAULT_SETTINGS,
@@ -151,5 +152,19 @@ describe('Threadverse continuity', () => {
     const markers = ['RANGE A', 'RANGE B', 'RANGE C', 'THREAD A', 'THREAD B', 'INSTRUCTIONS']
     const positions = markers.map((marker) => prompt.indexOf(marker))
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
+  })
+
+  test('parses fenced JSON and common author/content aliases', () => {
+    const feed = parseThreadverseFeed(`Here is the result:\n\`\`\`json
+      {"subreddit":"television","title":"Episode discussion","post":{"author":"OP","content":"Opening","upvotes":12},"comments":[{"author":"viewer","text":"Theory","replies":[]}]}
+    \`\`\``)
+    expect(feed.post.username).toBe('OP')
+    expect(feed.post.score).toBe(12)
+    expect(feed.comments[0].username).toBe('viewer')
+    expect(feed.comments[0].id).toBe('comment-1')
+  })
+
+  test('rejects a response without the required feed shape', () => {
+    expect(() => parseThreadverseFeed('{"title":"Missing fields"}')).toThrow()
   })
 })

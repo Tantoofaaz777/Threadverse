@@ -8,6 +8,7 @@ import type {
   BackendToFrontendMessage,
   ChatMessageSummary,
   ConnectionSummary,
+  FeedRound,
   FrontendToBackendMessage,
   RoundSummary,
   ThreadverseSettingsPayload,
@@ -307,6 +308,17 @@ const STYLES = `
     text-align: center;
   }
 
+  .threadverse-feed-stack { display: grid; gap: 10px; }
+  .threadverse-feed-header { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+  .threadverse-feed-meta { color: var(--lumiverse-text-muted); font-size: 9px; }
+  .threadverse-feed-title { margin: 5px 0 8px; color: var(--lumiverse-text); font-size: 14px; }
+  .threadverse-feed-preview {
+    max-height: 48vh; margin: 0; overflow: auto; padding: 10px;
+    border: 1px solid var(--lumiverse-border); border-radius: var(--lumiverse-radius);
+    background: var(--lumiverse-secondary, var(--lumiverse-fill-subtle));
+    color: var(--lumiverse-text); font-size: 10px; line-height: 1.45; white-space: pre-wrap;
+  }
+
   .threadverse-settings-stack {
     display: grid;
     gap: 10px;
@@ -433,8 +445,8 @@ export function setup(ctx: SpindleFrontendContext) {
     </nav>
 
     <section class="threadverse-panel" data-panel="feed" hidden>
-      <div class="threadverse-card threadverse-empty">
-        Generated fandom threads will appear here without being added to your roleplay chat.
+      <div class="threadverse-feed-stack" data-feed-list>
+        <div class="threadverse-card threadverse-empty">Generated fandom threads will appear here without being added to your roleplay chat.</div>
       </div>
     </section>
 
@@ -470,7 +482,8 @@ export function setup(ctx: SpindleFrontendContext) {
         </div>
         <div class="threadverse-actions">
           <button class="threadverse-button" type="button" data-action="clear">Clear</button>
-          <button class="threadverse-button threadverse-button--primary" type="button" data-action="save" disabled>Save Range</button>
+          <button class="threadverse-button" type="button" data-action="cancel-generation" hidden>Cancel</button>
+          <button class="threadverse-button threadverse-button--primary" type="button" data-action="save" disabled>Generate Thread</button>
         </div>
       </div>
     </section>
@@ -559,6 +572,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const search = shell.querySelector<HTMLInputElement>('.threadverse-search')!
   const unusedOnly = shell.querySelector<HTMLInputElement>('[data-unused-only]')!
   const saveButton = shell.querySelector<HTMLButtonElement>('[data-action="save"]')!
+  const cancelButton = shell.querySelector<HTMLButtonElement>('[data-action="cancel-generation"]')!
+  const feedList = shell.querySelector<HTMLElement>('[data-feed-list]')!
   const resetButton = shell.querySelector<HTMLButtonElement>('[data-action="reset"]')!
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
@@ -572,9 +587,11 @@ export function setup(ctx: SpindleFrontendContext) {
   let activeChat: { id: string; name: string } | null = null
   let messages: ChatMessageSummary[] = []
   let rounds: RoundSummary[] = []
+  let feeds: FeedRound[] = []
   let startIndex: number | null = null
   let endIndex: number | null = null
   let operationPending = false
+  let generationPending = false
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -886,7 +903,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const count = bounds[1] - bounds[0] + 1
     const rangeLabel = `#${messages[bounds[0]]?.index}-#${messages[bounds[1]]?.index}`
     recentContext.textContent = `${rangeLabel} · ${count} message${count === 1 ? '' : 's'}`
-    saveButton.disabled = operationPending || !activeChat
+    saveButton.disabled = operationPending || generationPending || !activeChat
   }
 
   function renderContinuity(): void {
@@ -896,8 +913,65 @@ export function setup(ctx: SpindleFrontendContext) {
       : rounds
         .map((round) => `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
         .join(' - ')
-    resetButton.disabled = operationPending || !activeChat || rounds.length === 0
+    resetButton.disabled = operationPending || generationPending || !activeChat || rounds.length === 0
     updateSummary()
+  }
+
+  function renderFeed(): void {
+    feedList.replaceChildren()
+    if (generationPending) {
+      const status = document.createElement('div')
+      status.className = 'threadverse-card threadverse-feed-header'
+      const copy = document.createElement('span')
+      copy.className = 'threadverse-copy'
+      copy.textContent = 'Generating fandom thread...'
+      const cancel = document.createElement('button')
+      cancel.type = 'button'
+      cancel.className = 'threadverse-button threadverse-button--compact'
+      cancel.dataset.action = 'cancel-generation'
+      cancel.textContent = 'Cancel'
+      status.append(copy, cancel)
+      feedList.appendChild(status)
+    }
+    if (feeds.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'threadverse-card threadverse-empty'
+      empty.textContent = 'Generated fandom threads will appear here without being added to your roleplay chat.'
+      feedList.appendChild(empty)
+      return
+    }
+    for (const round of [...feeds].reverse()) {
+      const card = document.createElement('article')
+      card.className = 'threadverse-card'
+      const header = document.createElement('div')
+      header.className = 'threadverse-feed-header'
+      const meta = document.createElement('div')
+      meta.innerHTML = `<div class="threadverse-eyebrow">Round ${round.sequence}</div><div class="threadverse-feed-meta">Messages ${round.startIndex}-${round.endIndex}</div>`
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'threadverse-button threadverse-button--compact'
+      button.dataset.action = 'regenerate'
+      button.dataset.roundId = round.id
+      button.disabled = generationPending
+      button.textContent = round.feed ? 'Regenerate' : 'Generate'
+      header.append(meta, button)
+      card.appendChild(header)
+      if (round.feed) {
+        const title = document.createElement('h3')
+        title.className = 'threadverse-feed-title'
+        title.textContent = `r/${round.feed.subreddit} · ${round.feed.title}`
+        const preview = document.createElement('pre')
+        preview.className = 'threadverse-feed-preview'
+        preview.textContent = JSON.stringify(round.feed, null, 2)
+        card.append(title, preview)
+      } else {
+        const copy = document.createElement('p')
+        copy.className = 'threadverse-copy'
+        copy.textContent = 'This round was saved before feed generation was added.'
+        card.appendChild(copy)
+      }
+      feedList.appendChild(card)
+    }
   }
 
   function renderMessages(): void {
@@ -1015,7 +1089,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!activeChat || chatId === activeChat.id) scheduleChatRefresh()
   }
 
-  function saveSelectedRange(): void {
+  function generateSelectedRange(): void {
     const bounds = selectedBounds()
     if (!bounds || !activeChat || operationPending) return
 
@@ -1023,11 +1097,17 @@ export function setup(ctx: SpindleFrontendContext) {
     clearError()
     renderContinuity()
     send({
-      type: 'threadverse:save_range',
+      type: 'threadverse:generate_thread',
       chatId: activeChat.id,
       startMessageId: messages[bounds[0]].id,
       endMessageId: messages[bounds[1]].id,
     })
+  }
+
+  function regenerate(roundId: string): void {
+    if (!activeChat || generationPending) return
+    operationPending = true
+    send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
 
   function resetContinuity(): void {
@@ -1054,7 +1134,9 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
     if (action === 'clear') clearSelection()
-    if (action === 'save') saveSelectedRange()
+    if (action === 'save') generateSelectedRange()
+    if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
+    if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'reset') resetContinuity()
     if (action === 'save-prompt') savePrompt()
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
@@ -1069,6 +1151,17 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
+    if (message.type === 'threadverse:generation_state') {
+      generationPending = message.status === 'started'
+      operationPending = generationPending
+      cancelButton.hidden = !generationPending
+      saveButton.textContent = generationPending ? 'Generating...' : 'Generate Thread'
+      if (message.status === 'error' && message.error) showError(message.error)
+      if (message.status === 'completed') switchTab('feed')
+      renderContinuity()
+      renderFeed()
+      return
+    }
     if (message.type === 'threadverse:operation_error') {
       operationPending = false
       if (activeTab !== 'settings') {
@@ -1129,6 +1222,7 @@ export function setup(ctx: SpindleFrontendContext) {
       activeChat = message.chat
       messages = message.messages
       rounds = message.rounds
+      feeds = message.feedRounds
       if (message.notice) {
         startIndex = null
         endIndex = null
@@ -1142,6 +1236,7 @@ export function setup(ctx: SpindleFrontendContext) {
       if (message.error && message.chat) showError(message.error)
       renderContinuity()
       renderMessages()
+      renderFeed()
 
       if (message.error && !message.chat) {
         messageList.replaceChildren()

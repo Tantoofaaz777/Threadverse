@@ -19,6 +19,33 @@ export interface RoundSummary {
   messageIds: string[]
 }
 
+export interface ThreadverseComment {
+  id: string
+  username: string
+  body: string
+  score: number
+  flair: string | null
+  timestamp: string | null
+  replies: ThreadverseComment[]
+}
+
+export interface ThreadverseFeed {
+  subreddit: string
+  title: string
+  post: {
+    username: string
+    body: string
+    score: number
+    flair: string | null
+    timestamp: string | null
+  }
+  comments: ThreadverseComment[]
+}
+
+export interface FeedRound extends RoundSummary {
+  feed: ThreadverseFeed | null
+}
+
 export interface ThreadverseSettingsPayload {
   connectionId: string | null
   maxOutputTokens: number | null
@@ -69,11 +96,13 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
-      type: 'threadverse:save_range'
+      type: 'threadverse:generate_thread'
       chatId: string
       startMessageId: string
       endMessageId: string
     }
+  | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string }
+  | { type: 'threadverse:cancel_generation' }
   | { type: 'threadverse:reset_continuity'; chatId: string }
 
 export type BackendToFrontendMessage =
@@ -86,10 +115,17 @@ export type BackendToFrontendMessage =
       chat: { id: string; name: string } | null
       messages: ChatMessageSummary[]
       rounds: RoundSummary[]
+      feedRounds: FeedRound[]
       error?: string
       notice?: string
     }
   | { type: 'threadverse:operation_error'; error: string }
+  | {
+      type: 'threadverse:generation_state'
+      status: 'started' | 'completed' | 'cancelled' | 'error'
+      roundId?: string
+      error?: string
+    }
   | {
       type: 'threadverse:settings_state'
       settings: ThreadverseSettingsPayload
@@ -117,6 +153,8 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:save_prompt'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:open_instruction_editor'
-    || type === 'threadverse:save_range'
+    || type === 'threadverse:generate_thread'
+    || type === 'threadverse:regenerate_thread'
+    || type === 'threadverse:cancel_generation'
     || type === 'threadverse:reset_continuity'
 }

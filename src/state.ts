@@ -5,11 +5,12 @@ import type {
   ThreadverseAutomaticSettings,
   ThreadversePromptSettings,
   ThreadverseSettingsPayload,
+  ThreadverseFeed,
 } from './shared'
 
 export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
-  feed: null
+  feed: ThreadverseFeed | null
 }
 
 export interface ChatContinuity {
@@ -176,6 +177,13 @@ export function normalizeStore(value: unknown): ThreadverseStore {
 export function summarizeRounds(rounds: StoredRound[]): RoundSummary[] {
   return rounds.map(({ messages, feed: _feed, ...summary }) => ({
     ...summary,
+    messageIds: messages.map((message) => message.id),
+  }))
+}
+
+export function feedRounds(rounds: StoredRound[]) {
+  return rounds.map(({ messages, ...round }) => ({
+    ...round,
     messageIds: messages.map((message) => message.id),
   }))
 }
