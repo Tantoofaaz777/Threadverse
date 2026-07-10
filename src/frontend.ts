@@ -330,6 +330,11 @@ const STYLES = `
 
   .threadverse-settings-field--wide { grid-column: 1 / -1; }
 
+  .threadverse-secondary-input {
+    background: var(--lumiverse-secondary, rgba(128, 128, 128, .15));
+    border-radius: var(--lumiverse-radius, 8px);
+  }
+
   .threadverse-settings-label {
     color: var(--lumiverse-text);
     font-size: 10px;
@@ -433,12 +438,10 @@ export function setup(ctx: SpindleFrontendContext) {
     <section class="threadverse-panel" data-panel="settings" hidden>
       <div class="threadverse-settings-stack">
         <section class="threadverse-card threadverse-settings-section">
-          <h3 class="threadverse-eyebrow">Model</h3>
+          <h3 class="threadverse-eyebrow">Connection</h3>
           <div class="threadverse-settings-field">
-            <span class="threadverse-settings-label">Lumiverse connection</span>
             <div data-setting="connection"></div>
           </div>
-          <p class="threadverse-settings-hint">The connection supplies its configured model, provider, endpoint, and credentials.</p>
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
@@ -457,7 +460,7 @@ export function setup(ctx: SpindleFrontendContext) {
               <div data-setting="top-p"></div>
             </label>
           </div>
-          <p class="threadverse-settings-hint">Leave a field empty to use its displayed default. Threadverse sends these samplers independently of the connection settings.</p>
+          <p class="threadverse-settings-hint">Leave a field empty to use its displayed default.</p>
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
@@ -562,6 +565,7 @@ export function setup(ctx: SpindleFrontendContext) {
       searchPlaceholder: 'Search connections...',
       emptyMessage: 'No Lumiverse LLM connections are available.',
       disabled: connections.length === 0,
+      triggerClassName: 'threadverse-secondary-input',
       options: connections.map((connection) => ({
         value: connection.id,
         label: connection.name,
@@ -582,6 +586,7 @@ export function setup(ctx: SpindleFrontendContext) {
       max: 200000,
       step: 1,
       integer: true,
+      className: 'threadverse-secondary-input',
       onChange: (value) => {
         if (settingsDraft) settingsDraft.maxOutputTokens = value
       },
@@ -594,6 +599,7 @@ export function setup(ctx: SpindleFrontendContext) {
       min: 0,
       max: 5,
       step: 0.05,
+      className: 'threadverse-secondary-input',
       onChange: (value) => {
         if (settingsDraft) settingsDraft.temperature = value
       },
@@ -606,6 +612,7 @@ export function setup(ctx: SpindleFrontendContext) {
       min: 0,
       max: 1,
       step: 0.05,
+      className: 'threadverse-secondary-input',
       onChange: (value) => {
         if (settingsDraft) settingsDraft.topP = value
       },
@@ -617,6 +624,7 @@ export function setup(ctx: SpindleFrontendContext) {
       max: 50,
       step: 1,
       integer: true,
+      className: 'threadverse-secondary-input',
       onChange: (value) => {
         if (settingsDraft && value !== null) settingsDraft.previousRangeLimit = value
       },
@@ -628,6 +636,7 @@ export function setup(ctx: SpindleFrontendContext) {
       max: 50,
       step: 1,
       integer: true,
+      className: 'threadverse-secondary-input',
       disabled: !settingsDraft.maintainFandomContinuity,
       onChange: (value) => {
         if (settingsDraft && value !== null) settingsDraft.fandomThreadLimit = value
@@ -649,6 +658,7 @@ export function setup(ctx: SpindleFrontendContext) {
       value: settingsDraft.instructions,
       rows: 14,
       ariaLabel: 'Permanent Threadverse instructions',
+      className: 'threadverse-secondary-input',
       onChange: (instructions) => {
         if (settingsDraft) settingsDraft.instructions = instructions
       },
