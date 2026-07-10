@@ -172,7 +172,7 @@ async function sendActiveChat(userId: string, options?: { notice?: string; error
 }
 
 function formatMessages(messages: ChatMessageSummary[]): string {
-  return messages.map((message) => `[${message.index}] ${message.role.toUpperCase()}: ${message.content}`).join('\n\n')
+  return messages.map((message) => message.content).join('\n\n')
 }
 
 function generationContent(result: unknown): string {
@@ -191,8 +191,8 @@ function promptForRound(store: ThreadverseStore, chatId: string, recent: ChatMes
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
   return buildThreadversePrompt({
-    previousRanges: previous.map((round) => ({ label: `ROUND ${round.sequence} (${round.startIndex}-${round.endIndex})`, content: formatMessages(round.messages) })),
-    recentRange: { label: `CURRENT RANGE (${recent[0].index}-${recent.at(-1)!.index})`, content: formatMessages(recent) },
+    previousRanges: previous.map((round) => ({ label: `ROUND ${round.sequence}`, content: formatMessages(round.messages) })),
+    recentRange: { label: 'CURRENT RANGE', content: formatMessages(recent) },
     fandomContinuity: fandom.map((round) => ({ label: `FANDOM THREAD ${round.sequence}`, content: serializeFeedForContinuity(round.feed!) })),
     instructions: preset.instructions,
   })
