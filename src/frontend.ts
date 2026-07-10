@@ -72,8 +72,7 @@ const STYLES = `
     text-transform: uppercase;
   }
 
-  .threadverse-copy,
-  .threadverse-summary {
+  .threadverse-copy {
     margin: 0;
     color: var(--lumiverse-text-muted);
     font-size: 11px;
@@ -129,18 +128,17 @@ const STYLES = `
 
   .threadverse-context-value.is-recent { color: var(--lumiverse-success, #22c55e); }
 
-  .threadverse-notice {
-    min-height: 16px;
-    margin: 6px 0 0;
-    color: var(--lumiverse-success, #22c55e);
+  .threadverse-context-error {
+    color: var(--lumiverse-danger, #ef4444);
     font-size: 10px;
+    line-height: 1.35;
   }
 
-  .threadverse-notice.is-error { color: var(--lumiverse-danger, #ef4444); }
+  .threadverse-context-error[hidden] { display: none; }
 
   .threadverse-toolbar {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 8px;
     margin: 10px 0;
   }
@@ -163,6 +161,61 @@ const STYLES = `
 
   .threadverse-button--compact { padding: 5px 8px; font-size: 9px; }
 
+  .threadverse-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--lumiverse-text-muted);
+    cursor: pointer;
+    font-size: 9px;
+    white-space: nowrap;
+  }
+
+  .threadverse-filter-toggle input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .threadverse-switch-track {
+    position: relative;
+    width: 28px;
+    height: 16px;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: 999px;
+    background: var(--lumiverse-fill-subtle);
+    transition: background .15s ease, border-color .15s ease;
+  }
+
+  .threadverse-switch-track::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--lumiverse-text-muted);
+    transition: transform .15s ease, background .15s ease;
+  }
+
+  .threadverse-filter-toggle input:checked + .threadverse-switch-track {
+    border-color: var(--lumiverse-success, #22c55e);
+    background: var(--lumiverse-success-020, rgba(34, 197, 94, .2));
+  }
+
+  .threadverse-filter-toggle input:checked + .threadverse-switch-track::after {
+    transform: translateX(12px);
+    background: var(--lumiverse-success, #22c55e);
+  }
+
+  .threadverse-filter-toggle input:focus-visible + .threadverse-switch-track {
+    outline: 2px solid var(--lumiverse-accent);
+    outline-offset: 2px;
+  }
+
   .threadverse-button--primary {
     background: var(--lumiverse-accent);
     color: var(--lumiverse-accent-contrast, white);
@@ -180,8 +233,8 @@ const STYLES = `
 
   .threadverse-message {
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 8px;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 3px;
     align-items: start;
     width: 100%;
     border: 0;
@@ -294,16 +347,20 @@ export function setup(ctx: SpindleFrontendContext) {
             <span class="threadverse-context-label">Recent context</span>
             <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
           </div>
+          <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
         <div class="threadverse-toolbar">
           <input class="threadverse-search" type="search" placeholder="Search messages..." aria-label="Search messages" />
+          <label class="threadverse-filter-toggle">
+            <input type="checkbox" data-unused-only />
+            <span class="threadverse-switch-track" aria-hidden="true"></span>
+            <span>Unused only</span>
+          </label>
           <button class="threadverse-button" type="button" data-action="refresh">Refresh</button>
         </div>
         <div class="threadverse-message-list">
           <div class="threadverse-empty" data-message-state>Loading the active chat...</div>
         </div>
-        <p class="threadverse-summary" data-selection-summary>0 messages selected</p>
-        <p class="threadverse-notice" data-notice></p>
         <div class="threadverse-actions">
           <button class="threadverse-button" type="button" data-action="clear">Clear</button>
           <button class="threadverse-button threadverse-button--primary" type="button" data-action="save" disabled>Save Range</button>
@@ -335,13 +392,13 @@ export function setup(ctx: SpindleFrontendContext) {
   const panels = Array.from(shell.querySelectorAll<HTMLElement>('[data-panel]'))
   const messageList = shell.querySelector<HTMLElement>('.threadverse-message-list')!
   const search = shell.querySelector<HTMLInputElement>('.threadverse-search')!
-  const summary = shell.querySelector<HTMLElement>('[data-selection-summary]')!
+  const unusedOnly = shell.querySelector<HTMLInputElement>('[data-unused-only]')!
   const saveButton = shell.querySelector<HTMLButtonElement>('[data-action="save"]')!
   const resetButton = shell.querySelector<HTMLButtonElement>('[data-action="reset"]')!
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
-  const notice = shell.querySelector<HTMLElement>('[data-notice]')!
+  const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -352,6 +409,16 @@ export function setup(ctx: SpindleFrontendContext) {
   let operationPending = false
 
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
+
+  function clearError(): void {
+    contextError.textContent = ''
+    contextError.hidden = true
+  }
+
+  function showError(message: string): void {
+    contextError.textContent = message
+    contextError.hidden = false
+  }
 
   function switchTab(next: ThreadverseTab): void {
     activeTab = next
@@ -368,13 +435,10 @@ export function setup(ctx: SpindleFrontendContext) {
     const bounds = selectedBounds()
     if (!bounds) {
       if (startIndex === null && endIndex === null) {
-        summary.textContent = '0 messages selected'
         recentContext.textContent = 'Select a range below'
       } else if (startIndex !== null) {
-        summary.textContent = 'Choose an ending message'
         recentContext.textContent = `Start #${messages[startIndex]?.index} selected; choose the end`
       } else {
-        summary.textContent = 'Choose a starting message'
         recentContext.textContent = `End #${messages[endIndex!]?.index} selected; choose the start`
       }
       saveButton.disabled = true
@@ -383,7 +447,6 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const count = bounds[1] - bounds[0] + 1
     const rangeLabel = `#${messages[bounds[0]]?.index}-#${messages[bounds[1]]?.index}`
-    summary.textContent = `${count} message${count === 1 ? '' : 's'} selected · ${rangeLabel}`
     recentContext.textContent = `${rangeLabel} · ${count} message${count === 1 ? '' : 's'}`
     saveButton.disabled = operationPending || !activeChat
   }
@@ -405,14 +468,19 @@ export function setup(ctx: SpindleFrontendContext) {
     const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
     messageList.replaceChildren()
 
-    const visible = messages.filter((message) =>
-      !query || message.content.toLocaleLowerCase().includes(query)
-    )
+    const visible = messages.filter((message) => {
+      if (unusedOnly.checked && usedIds.has(message.id)) return false
+      return !query || message.content.toLocaleLowerCase().includes(query)
+    })
 
     if (visible.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'threadverse-empty'
-      empty.textContent = messages.length === 0 ? 'No messages are available in the active chat.' : 'No messages match your search.'
+      empty.textContent = messages.length === 0
+        ? 'No messages are available in the active chat.'
+        : unusedOnly.checked && !query
+          ? 'Every message in this chat already belongs to a saved round.'
+          : 'No messages match the current filters.'
       messageList.appendChild(empty)
       updateSummary()
       return
@@ -471,8 +539,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function selectMessage(index: number): void {
-    notice.textContent = ''
-    notice.classList.remove('is-error')
+    clearError()
 
     const next = toggleRangeEndpoint({ startIndex, endIndex }, index)
     if (
@@ -480,8 +547,7 @@ export function setup(ctx: SpindleFrontendContext) {
       && next.endIndex !== null
       && rangeOverlapsSavedRound(next.startIndex, next.endIndex)
     ) {
-      notice.textContent = 'A range cannot include messages that already belong to a saved round.'
-      notice.classList.add('is-error')
+      showError('A range cannot include messages that already belong to a saved round.')
       return
     }
 
@@ -491,8 +557,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function loadActiveChat(): void {
-    notice.textContent = ''
-    notice.classList.remove('is-error')
+    clearError()
     messageList.innerHTML = '<div class="threadverse-empty">Loading the active chat...</div>'
     send({ type: 'threadverse:load_active_chat' })
   }
@@ -502,8 +567,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!bounds || !activeChat || operationPending) return
 
     operationPending = true
-    notice.textContent = 'Saving range...'
-    notice.classList.remove('is-error')
+    clearError()
     renderContinuity()
     send({
       type: 'threadverse:save_range',
@@ -516,8 +580,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function resetContinuity(): void {
     if (!activeChat || operationPending) return
     operationPending = true
-    notice.textContent = 'Resetting continuity...'
-    notice.classList.remove('is-error')
+    clearError()
     renderContinuity()
     send({ type: 'threadverse:reset_continuity', chatId: activeChat.id })
   }
@@ -545,13 +608,13 @@ export function setup(ctx: SpindleFrontendContext) {
 
   shell.addEventListener('click', onClick)
   search.addEventListener('input', renderMessages)
+  unusedOnly.addEventListener('change', renderMessages)
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:operation_error') {
       operationPending = false
-      notice.textContent = message.error
-      notice.classList.add('is-error')
+      showError(message.error)
       renderContinuity()
       return
     }
@@ -563,13 +626,12 @@ export function setup(ctx: SpindleFrontendContext) {
       rounds = message.rounds
       startIndex = null
       endIndex = null
-      notice.textContent = message.notice ?? ''
-      notice.classList.toggle('is-error', Boolean(message.error))
+      clearError()
+      if (message.error && message.chat) showError(message.error)
       renderContinuity()
       renderMessages()
 
       if (message.error && !message.chat) {
-        notice.textContent = ''
         messageList.replaceChildren()
         const error = document.createElement('div')
         error.className = 'threadverse-empty'
@@ -587,6 +649,8 @@ export function setup(ctx: SpindleFrontendContext) {
     unsubscribeActivate()
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)
+    search.removeEventListener('input', renderMessages)
+    unusedOnly.removeEventListener('change', renderMessages)
     drawer.destroy()
     removeStyle()
     ctx.dom.cleanup()
