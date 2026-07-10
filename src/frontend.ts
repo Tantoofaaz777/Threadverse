@@ -378,9 +378,45 @@ const STYLES = `
     align-items: center;
   }
 
-  .threadverse-preset-actions {
+  .threadverse-expandable-textarea {
+    position: relative;
+    width: 100%;
+  }
+
+  .threadverse-instructions-input { padding-right: 38px; }
+
+  .threadverse-inline-expand {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    z-index: 1;
     display: flex;
-    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    width: var(--lumiverse-btn-icon-sm, 28px);
+    height: var(--lumiverse-btn-icon-sm, 28px);
+    padding: 0;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lumiverse-radius-sm, 5px);
+    background: var(--lumiverse-bg, #0f0d15);
+    color: var(--lumiverse-text-dim);
+    cursor: pointer;
+    opacity: 0;
+    transition: all .15s ease;
+  }
+
+  .threadverse-expandable-textarea:hover .threadverse-inline-expand,
+  .threadverse-expandable-textarea:focus-within .threadverse-inline-expand {
+    opacity: 1;
+  }
+
+  .threadverse-inline-expand:hover {
+    color: var(--lumiverse-primary);
+    border-color: var(--lumiverse-primary);
+  }
+
+  @media (any-hover: none) {
+    .threadverse-inline-expand { opacity: .7; }
   }
 `
 
@@ -502,12 +538,19 @@ export function setup(ctx: SpindleFrontendContext) {
             <button class="threadverse-button threadverse-button--compact" type="button" data-action="delete-instruction-preset">Delete</button>
           </div>
           <div class="threadverse-settings-field">
-            <div data-setting="instructions"></div>
+            <div class="threadverse-expandable-textarea">
+              <div data-setting="instructions"></div>
+              <button class="threadverse-inline-expand" type="button" data-action="expand-instructions" title="Expand editor" aria-label="Expand editor">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </button>
+            </div>
           </div>
           <p class="threadverse-settings-hint">The context section headers are assembled by Threadverse. This prompt controls the fandom's behavior and output.</p>
-          <div class="threadverse-preset-actions">
-            <button class="threadverse-button" type="button" data-action="expand-instructions">Expand editor</button>
-          </div>
           <div class="threadverse-settings-status" data-settings-status>Loading settings...</div>
           <div class="threadverse-settings-actions">
             <button class="threadverse-button" type="button" data-action="reset-instructions">Reset prompt</button>
@@ -716,7 +759,7 @@ export function setup(ctx: SpindleFrontendContext) {
       value: activePreset.instructions,
       rows: 14,
       ariaLabel: 'Permanent Threadverse instructions',
-      className: 'threadverse-secondary-input',
+      className: 'threadverse-secondary-input threadverse-instructions-input',
       onChange: (instructions) => {
         const preset = getActiveInstructionPreset()
         if (preset) preset.instructions = instructions
