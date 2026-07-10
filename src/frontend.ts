@@ -346,7 +346,7 @@ const STYLES = `
     padding: 3px 6px; border: 0; border-radius: 999px; background: transparent;
     color: var(--lumiverse-text-muted); cursor: default; font: inherit; font-size: 9px;
   }
-  .threadverse-action-icon { font-size: 14px; line-height: 1; }
+  .threadverse-action-icon { display: block; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .threadverse-vote-group {
     display: inline-flex; align-items: center; overflow: hidden; border: 1px solid var(--lumiverse-border);
     border-radius: 999px; background: var(--lumiverse-fill-subtle);
@@ -1029,21 +1029,41 @@ export function setup(ctx: SpindleFrontendContext) {
     return row
   }
 
-  function visualAction(icon: string, label: string): HTMLButtonElement {
+  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more'
+
+  const ACTION_ICON_PATHS: Record<ActionIcon, string[]> = {
+    upvote: ['M12 3 4.5 10.5h4.25V21h6.5V10.5h4.25L12 3Z'],
+    downvote: ['M12 21 4.5 13.5h4.25V3h6.5v10.5h4.25L12 21Z'],
+    comment: ['M20 15a4 4 0 0 1-4 4H8l-5 3v-7a4 4 0 0 1-1-2.65V8a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v7Z'],
+    reply: ['M9 7 4 12l5 5v-3h4c3.5 0 5.5 1.2 7 4-.4-5-2.7-8-7-8H9V7Z'],
+    share: ['M15 8l5-5m0 0h-5m5 0v5', 'M11 5H7a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-4'],
+    more: ['M12 6.5h.01', 'M12 12h.01', 'M12 17.5h.01'],
+  }
+
+  function actionIcon(icon: ActionIcon): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    svg.setAttribute('aria-hidden', 'true')
+    svg.classList.add('threadverse-action-icon')
+    for (const pathData of ACTION_ICON_PATHS[icon]) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('d', pathData)
+      svg.appendChild(path)
+    }
+    return svg
+  }
+
+  function visualAction(icon: ActionIcon, label: string, visibleText?: string, hideTextOnMobile = true): HTMLButtonElement {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'threadverse-action-button'
     button.title = label
     button.setAttribute('aria-label', label)
-    const symbol = document.createElement('span')
-    symbol.className = 'threadverse-action-icon'
-    symbol.setAttribute('aria-hidden', 'true')
-    symbol.textContent = icon
-    button.appendChild(symbol)
-    if (label === 'Reply' || label === 'Share') {
+    button.appendChild(actionIcon(icon))
+    if (visibleText) {
       const text = document.createElement('span')
-      text.className = 'threadverse-action-label'
-      text.textContent = label
+      text.className = hideTextOnMobile ? 'threadverse-action-label' : 'threadverse-score'
+      text.textContent = visibleText
       button.appendChild(text)
     }
     return button
@@ -1054,22 +1074,19 @@ export function setup(ctx: SpindleFrontendContext) {
     actions.className = 'threadverse-reddit-actions'
     const votes = document.createElement('div')
     votes.className = 'threadverse-vote-group'
-    const upvote = visualAction('↑', 'Upvote')
+    const upvote = visualAction('upvote', 'Upvote')
     const scoreLabel = document.createElement('span')
     scoreLabel.className = 'threadverse-score'
     scoreLabel.textContent = String(score)
-    const downvote = visualAction('↓', 'Downvote')
+    const downvote = visualAction('downvote', 'Downvote')
     votes.append(upvote, scoreLabel, downvote)
     actions.appendChild(votes)
     if (commentCount !== undefined) {
-      const comments = visualAction('◯', `${commentCount} comments`)
-      const text = comments.querySelector('.threadverse-action-icon')!
-      text.textContent = `◯ ${commentCount}`
-      actions.appendChild(comments)
+      actions.appendChild(visualAction('comment', `${commentCount} comments`, String(commentCount), false))
     } else {
-      actions.appendChild(visualAction('↩', 'Reply'))
+      actions.appendChild(visualAction('reply', 'Reply', 'Reply'))
     }
-    actions.append(visualAction('↗', 'Share'), visualAction('⋮', 'More options'))
+    actions.append(visualAction('share', 'Share', 'Share'), visualAction('more', 'More options'))
     return actions
   }
 
