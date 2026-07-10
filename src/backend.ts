@@ -118,13 +118,11 @@ async function saveRange(
     chatName: activeChat.name,
     rounds: [],
   }
-  const previous = continuity.rounds.at(-1)
-  if (
-    previous
-    && previous.startMessageId === selectedMessages[0].id
-    && previous.endMessageId === selectedMessages.at(-1)!.id
-  ) {
-    throw new Error('This range is already the most recent continuity round.')
+  const usedMessageIds = new Set(
+    continuity.rounds.flatMap((storedRound) => storedRound.messages.map((message) => message.id)),
+  )
+  if (selectedMessages.some((message) => usedMessageIds.has(message.id))) {
+    throw new Error('This range overlaps messages that already belong to a continuity round.')
   }
 
   const round: StoredRound = {

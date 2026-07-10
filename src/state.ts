@@ -1,6 +1,6 @@
 import type { ChatMessageSummary, RoundSummary } from './shared'
 
-export interface StoredRound extends RoundSummary {
+export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
   feed: null
 }
@@ -50,7 +50,10 @@ export function normalizeStore(value: unknown): ThreadverseStore {
 }
 
 export function summarizeRounds(rounds: StoredRound[]): RoundSummary[] {
-  return rounds.map(({ messages: _messages, feed: _feed, ...summary }) => summary)
+  return rounds.map(({ messages, feed: _feed, ...summary }) => ({
+    ...summary,
+    messageIds: messages.map((message) => message.id),
+  }))
 }
 
 export function selectPreviousRounds(store: ThreadverseStore, chatId: string): StoredRound[] {

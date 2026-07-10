@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
+import { toggleRangeEndpoint } from './range-selection'
 import {
   DEFAULT_SETTINGS,
   emptyStore,
@@ -24,6 +25,17 @@ function round(sequence: number): StoredRound {
 }
 
 describe('Threadverse continuity', () => {
+  test('clicking either selected endpoint toggles only that endpoint off', () => {
+    expect(toggleRangeEndpoint({ startIndex: 4, endIndex: 9 }, 9)).toEqual({
+      startIndex: 4,
+      endIndex: null,
+    })
+    expect(toggleRangeEndpoint({ startIndex: 4, endIndex: 9 }, 4)).toEqual({
+      startIndex: null,
+      endIndex: 9,
+    })
+  })
+
   test('fills defaults when loading an older state file', () => {
     const store = normalizeStore({ version: 1, chats: {} })
     expect(store.settings).toEqual(DEFAULT_SETTINGS)

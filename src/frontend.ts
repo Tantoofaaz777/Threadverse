@@ -6,6 +6,7 @@ import type {
   RoundSummary,
   ThreadverseTab,
 } from './shared'
+import { toggleRangeEndpoint } from './range-selection'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -25,9 +26,6 @@ const STYLES = `
   }
 
   .threadverse-tabs {
-    position: sticky;
-    top: 0;
-    z-index: 5;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 4px;
@@ -182,7 +180,7 @@ const STYLES = `
 
   .threadverse-message {
     display: grid;
-    grid-template-columns: 42px 62px minmax(0, 1fr);
+    grid-template-columns: 42px minmax(0, 1fr);
     gap: 8px;
     align-items: start;
     width: 100%;
@@ -200,6 +198,12 @@ const STYLES = `
   .threadverse-message:hover { background: var(--lumiverse-fill-subtle); }
   .threadverse-message.is-selected { background: var(--lumiverse-success-015, rgba(34, 197, 94, .15)); }
   .threadverse-message.is-endpoint { box-shadow: inset 3px 0 0 var(--lumiverse-success, #22c55e); }
+  .threadverse-message.is-used {
+    cursor: not-allowed;
+    opacity: .38;
+  }
+
+  .threadverse-message.is-used:hover { background: transparent; }
 
   .threadverse-message-marker {
     display: block;
@@ -210,8 +214,7 @@ const STYLES = `
     letter-spacing: .04em;
   }
 
-  .threadverse-message-index,
-  .threadverse-message-role {
+  .threadverse-message-index {
     color: var(--lumiverse-text-muted);
     font-size: 10px;
     font-weight: 700;
@@ -364,10 +367,16 @@ export function setup(ctx: SpindleFrontendContext) {
   function updateSummary(): void {
     const bounds = selectedBounds()
     if (!bounds) {
-      summary.textContent = startIndex === null ? '0 messages selected' : 'Choose an ending message'
-      recentContext.textContent = startIndex === null
-        ? 'Select a range below'
-        : `Start #${messages[startIndex]?.index} selected; choose the end`
+      if (startIndex === null && endIndex === null) {
+        summary.textContent = '0 messages selected'
+        recentContext.textContent = 'Select a range below'
+      } else if (startIndex !== null) {
+        summary.textContent = 'Choose an ending message'
+        recentContext.textContent = `Start #${messages[startIndex]?.index} selected; choose the end`
+      } else {
+        summary.textContent = 'Choose a starting message'
+        recentContext.textContent = `End #${messages[endIndex!]?.index} selected; choose the start`
+      }
       saveButton.disabled = true
       return
     }
@@ -384,7 +393,7 @@ export function setup(ctx: SpindleFrontendContext) {
     previousContext.textContent = rounds.length === 0
       ? 'None yet'
       : rounds
-        .map((round) => `Round ${round.sequence} (#${round.startIndex}-#${round.endIndex})`)
+        .map((round) => `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
         .join(' -> ')
     resetButton.disabled = operationPending || !activeChat || rounds.length === 0
     updateSummary()
@@ -393,10 +402,11 @@ export function setup(ctx: SpindleFrontendContext) {
   function renderMessages(): void {
     const query = search.value.trim().toLocaleLowerCase()
     const bounds = selectedBounds()
+    const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
     messageList.replaceChildren()
 
     const visible = messages.filter((message) =>
-      !query || message.content.toLocaleLowerCase().includes(query) || message.role.includes(query)
+      !query || message.content.toLocaleLowerCase().includes(query)
     )
 
     if (visible.length === 0) {
@@ -414,6 +424,11 @@ export function setup(ctx: SpindleFrontendContext) {
       row.type = 'button'
       row.className = 'threadverse-message'
       row.dataset.messageIndex = String(absoluteIndex)
+      if (usedIds.has(message.id)) {
+        row.classList.add('is-used')
+        row.disabled = true
+        row.title = 'This message already belongs to a saved round.'
+      }
       if (bounds && absoluteIndex >= bounds[0] && absoluteIndex <= bounds[1]) row.classList.add('is-selected')
       if (absoluteIndex === startIndex || absoluteIndex === endIndex) row.classList.add('is-endpoint')
 
@@ -427,19 +442,15 @@ export function setup(ctx: SpindleFrontendContext) {
           ? bounds[0] === bounds[1]
             ? 'START / END'
             : absoluteIndex === bounds[0] ? 'START' : 'END'
-          : 'START'
+          : absoluteIndex === startIndex ? 'START' : 'END'
         index.appendChild(marker)
       }
-
-      const role = document.createElement('span')
-      role.className = 'threadverse-message-role'
-      role.textContent = message.role === 'assistant' ? 'Character' : message.role
 
       const content = document.createElement('span')
       content.className = 'threadverse-message-content'
       content.textContent = message.content.replace(/\s+/g, ' ').trim() || '(empty message)'
 
-      row.append(index, role, content)
+      row.append(index, content)
       messageList.appendChild(row)
     }
 
@@ -449,6 +460,33 @@ export function setup(ctx: SpindleFrontendContext) {
   function clearSelection(): void {
     startIndex = null
     endIndex = null
+    renderMessages()
+  }
+
+  function rangeOverlapsSavedRound(first: number, last: number): boolean {
+    const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
+    return messages
+      .slice(Math.min(first, last), Math.max(first, last) + 1)
+      .some((message) => usedIds.has(message.id))
+  }
+
+  function selectMessage(index: number): void {
+    notice.textContent = ''
+    notice.classList.remove('is-error')
+
+    const next = toggleRangeEndpoint({ startIndex, endIndex }, index)
+    if (
+      next.startIndex !== null
+      && next.endIndex !== null
+      && rangeOverlapsSavedRound(next.startIndex, next.endIndex)
+    ) {
+      notice.textContent = 'A range cannot include messages that already belong to a saved round.'
+      notice.classList.add('is-error')
+      return
+    }
+
+    startIndex = next.startIndex
+    endIndex = next.endIndex
     renderMessages()
   }
 
@@ -494,14 +532,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const row = target.closest<HTMLButtonElement>('[data-message-index]')
     if (row) {
-      const index = Number(row.dataset.messageIndex)
-      if (startIndex === null || endIndex !== null) {
-        startIndex = index
-        endIndex = null
-      } else {
-        endIndex = index
-      }
-      renderMessages()
+      selectMessage(Number(row.dataset.messageIndex))
       return
     }
 

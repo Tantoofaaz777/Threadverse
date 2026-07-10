@@ -16,6 +16,7 @@ export interface RoundSummary {
   startIndex: number
   endIndex: number
   messageCount: number
+  messageIds: string[]
 }
 
 export type FrontendToBackendMessage =
