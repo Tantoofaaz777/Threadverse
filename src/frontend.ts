@@ -1553,7 +1553,6 @@ export function setup(ctx: SpindleFrontendContext) {
     ctx.events.on('MESSAGE_DELETED', scheduleActiveChatRefresh),
     ctx.events.on('MESSAGE_SWIPED', scheduleActiveChatRefresh),
   ]
-  send({ type: 'threadverse:get_status' })
   send({ type: 'threadverse:load_settings' })
   loadActiveChat()
 

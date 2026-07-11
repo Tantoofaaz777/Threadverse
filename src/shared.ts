@@ -88,7 +88,6 @@ export interface ConnectionSummary {
 }
 
 export type FrontendToBackendMessage =
-  | { type: 'threadverse:get_status' }
   | { type: 'threadverse:load_active_chat' }
   | { type: 'threadverse:load_settings' }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
@@ -107,10 +106,6 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:reset_continuity'; chatId: string }
 
 export type BackendToFrontendMessage =
-  | {
-      type: 'threadverse:status'
-      grantedPermissions: string[]
-    }
   | {
       type: 'threadverse:active_chat'
       chat: { id: string; name: string } | null
@@ -146,8 +141,7 @@ export type BackendToFrontendMessage =
 export function isFrontendMessage(value: unknown): value is FrontendToBackendMessage {
   if (!value || typeof value !== 'object') return false
   const type = (value as { type?: unknown }).type
-  return type === 'threadverse:get_status'
-    || type === 'threadverse:load_active_chat'
+  return type === 'threadverse:load_active_chat'
     || type === 'threadverse:load_settings'
     || type === 'threadverse:auto_save_settings'
     || type === 'threadverse:save_prompt'

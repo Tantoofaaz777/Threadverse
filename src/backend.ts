@@ -327,7 +327,6 @@ async function resetContinuity(chatId: string, userId: string): Promise<void> {
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   if (!isFrontendMessage(payload)) return
   try {
-    if (payload.type === 'threadverse:get_status') { send({ type: 'threadverse:status', grantedPermissions: await spindle.permissions.getGranted() }, userId); return }
     if (payload.type === 'threadverse:load_active_chat') { await sendActiveChat(userId); return }
     if (payload.type === 'threadverse:load_settings') { await sendSettingsState(userId); return }
     if (payload.type === 'threadverse:auto_save_settings') { await saveAutomaticSettings(payload.settings, userId); return }
