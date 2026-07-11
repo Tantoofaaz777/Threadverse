@@ -80,6 +80,50 @@ describe('Threadverse continuity', () => {
     expect(store.settings.instructionPresets).toEqual(DEFAULT_SETTINGS.instructionPresets)
   })
 
+  test('recovers valid continuity from a partially corrupted store', () => {
+    const store = normalizeStore({
+      version: 1,
+      settings: {
+        maxOutputTokens: 'many',
+        temperature: 99,
+        topP: -1,
+        previousRangeLimit: 2.5,
+        maintainFandomContinuity: 'yes',
+      },
+      chats: {
+        good: {
+          chatName: 'Recovered RP',
+          rounds: [{
+            createdAt: '2026-01-01T00:00:00.000Z',
+            messages: [
+              { id: 'm1', index: 4, role: 'assistant', content: 'Valid message' },
+              { id: '', index: 5, role: 'user', content: 'Broken message' },
+            ],
+            feed: { title: 'Incomplete feed' },
+          }],
+        },
+        broken: { rounds: 'not-an-array' },
+      },
+    })
+
+    expect(store.settings.maxOutputTokens).toBeNull()
+    expect(store.settings.temperature).toBeNull()
+    expect(store.settings.topP).toBeNull()
+    expect(store.settings.previousRangeLimit).toBeNull()
+    expect(store.settings.maintainFandomContinuity).toBe(true)
+    expect(Object.keys(store.chats)).toEqual(['good'])
+    expect(store.chats.good.rounds).toHaveLength(1)
+    expect(store.chats.good.rounds[0]).toMatchObject({
+      sequence: 1,
+      startMessageId: 'm1',
+      endMessageId: 'm1',
+      startIndex: 4,
+      endIndex: 4,
+      messageCount: 1,
+      feed: null,
+    })
+  })
+
   test('uses sampler hints when optional sampler fields are empty', () => {
     const store = emptyStore()
     expect(resolveSamplers(store.settings)).toEqual({

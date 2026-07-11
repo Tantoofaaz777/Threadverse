@@ -7,6 +7,7 @@ import type {
   ThreadverseSettingsPayload,
   ThreadverseFeed,
 } from './shared'
+import { parseThreadverseFeed } from './feed'
 
 export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
@@ -116,10 +117,87 @@ export function emptyStore(): ThreadverseStore {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function storedOptionalNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): number | null {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= minimum
+    && value <= maximum
+    && (!integer || Number.isInteger(value))
+    ? value
+    : null
+}
+
+function normalizeStoredMessage(value: unknown): ChatMessageSummary | null {
+  if (!isRecord(value)) return null
+  const role = value.role
+  if (role !== 'system' && role !== 'user' && role !== 'assistant') return null
+  if (typeof value.id !== 'string' || !value.id || typeof value.content !== 'string') return null
+  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 1) return null
+  return { id: value.id, index: value.index, role, content: value.content }
+}
+
+function normalizeStoredFeed(value: unknown): ThreadverseFeed | null {
+  if (!isRecord(value)) return null
+  try {
+    return parseThreadverseFeed(JSON.stringify(value))
+  } catch {
+    return null
+  }
+}
+
+function normalizeStoredRound(value: unknown, sequence: number): StoredRound | null {
+  if (!isRecord(value) || !Array.isArray(value.messages)) return null
+  const messages = value.messages.map(normalizeStoredMessage).filter((message): message is ChatMessageSummary => Boolean(message))
+  if (messages.length === 0) return null
+  const first = messages[0]
+  const last = messages.at(-1)!
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : `recovered-round-${sequence}-${first.id}`,
+    sequence,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
+    startMessageId: first.id,
+    endMessageId: last.id,
+    startIndex: first.index,
+    endIndex: last.index,
+    messageCount: messages.length,
+    messages,
+    feed: normalizeStoredFeed(value.feed),
+  }
+}
+
+function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
+  if (!isRecord(value)) return {}
+  const chats: Record<string, ChatContinuity> = {}
+  for (const [chatKey, rawChat] of Object.entries(value)) {
+    if (!isRecord(rawChat) || !Array.isArray(rawChat.rounds)) continue
+    const rounds = rawChat.rounds
+      .map((round, index) => normalizeStoredRound(round, index + 1))
+      .filter((round): round is StoredRound => Boolean(round))
+      .map((round, index) => ({ ...round, sequence: index + 1 }))
+    if (rounds.length === 0) continue
+    const chatId = typeof rawChat.chatId === 'string' && rawChat.chatId ? rawChat.chatId : chatKey
+    chats[chatKey] = {
+      chatId,
+      chatName: typeof rawChat.chatName === 'string' ? rawChat.chatName : 'Untitled chat',
+      rounds,
+    }
+  }
+  return chats
+}
+
 export function normalizeStore(value: unknown): ThreadverseStore {
   if (!value || typeof value !== 'object') return emptyStore()
   const candidate = value as Partial<ThreadverseStore>
-  if (candidate.version !== 1 || !candidate.chats || typeof candidate.chats !== 'object') {
+  if (candidate.version !== 1 || !isRecord(candidate.chats)) {
     return emptyStore()
   }
   const savedSettings = candidate.settings as Partial<ThreadverseSettings> & {
@@ -131,15 +209,18 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     instructions: legacyInstructions,
     ...savedWithoutLegacyFields
   } = savedSettings ?? {}
+  const presetIds = new Set<string>()
+  const presetNames = new Set<string>()
   const savedPresets = Array.isArray(savedSettings?.instructionPresets)
-    ? savedSettings.instructionPresets
-        .filter((preset): preset is InstructionPreset => Boolean(
-          preset
-          && typeof preset.id === 'string'
-          && typeof preset.name === 'string'
-          && typeof preset.instructions === 'string',
-        ))
-        .map((preset) => ({ ...preset }))
+    ? savedSettings.instructionPresets.filter((preset): preset is InstructionPreset => {
+        if (!preset || typeof preset.id !== 'string' || !preset.id) return false
+        if (typeof preset.name !== 'string' || !preset.name || typeof preset.instructions !== 'string') return false
+        const normalizedName = preset.name.toLocaleLowerCase()
+        if (presetIds.has(preset.id) || presetNames.has(normalizedName)) return false
+        presetIds.add(preset.id)
+        presetNames.add(normalizedName)
+        return true
+      }).map((preset) => ({ ...preset }))
     : []
   const instructionPresets = savedPresets.length > 0
     ? savedPresets
@@ -152,9 +233,18 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   const activeInstructionPresetId = instructionPresets.some((preset) => preset.id === requestedActivePresetId)
     ? requestedActivePresetId!
     : instructionPresets[0].id
-  const mergedSettings = {
-    ...DEFAULT_SETTINGS,
-    ...savedWithoutLegacyFields,
+  const mergedSettings: ThreadverseSettings = {
+    connectionId: typeof savedWithoutLegacyFields.connectionId === 'string'
+      ? savedWithoutLegacyFields.connectionId
+      : null,
+    maxOutputTokens: storedOptionalNumber(savedWithoutLegacyFields.maxOutputTokens, 1, 200000, true),
+    temperature: storedOptionalNumber(savedWithoutLegacyFields.temperature, 0, 5),
+    topP: storedOptionalNumber(savedWithoutLegacyFields.topP, 0, 1),
+    previousRangeLimit: storedOptionalNumber(savedWithoutLegacyFields.previousRangeLimit, 0, 50, true),
+    fandomThreadLimit: storedOptionalNumber(savedWithoutLegacyFields.fandomThreadLimit, 0, 50, true),
+    maintainFandomContinuity: typeof savedWithoutLegacyFields.maintainFandomContinuity === 'boolean'
+      ? savedWithoutLegacyFields.maintainFandomContinuity
+      : DEFAULT_SETTINGS.maintainFandomContinuity,
     instructionPresets,
     activeInstructionPresetId,
   }
@@ -170,7 +260,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   return {
     version: 1,
     settings: mergedSettings,
-    chats: candidate.chats,
+    chats: normalizeStoredChats(candidate.chats),
   }
 }
 
