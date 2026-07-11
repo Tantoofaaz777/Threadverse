@@ -157,6 +157,27 @@ describe('Threadverse continuity', () => {
     expect(store.chats['real-chat-id'].rounds[1].id).toBe('duplicate-recovered-2')
   })
 
+  test('preserves valid settings when the chats container is corrupted', () => {
+    const store = normalizeStore({
+      version: 1,
+      settings: {
+        connectionId: 'connection-1',
+        temperature: 0.65,
+        maintainFandomContinuity: false,
+        instructionPresets: [{ id: 'custom', name: 'Custom', instructions: 'Keep this prompt' }],
+        activeInstructionPresetId: 'custom',
+      },
+      chats: 'corrupted',
+    })
+
+    expect(store.chats).toEqual({})
+    expect(store.settings.connectionId).toBe('connection-1')
+    expect(store.settings.temperature).toBe(0.65)
+    expect(store.settings.maintainFandomContinuity).toBe(false)
+    expect(store.settings.instructionPresets[0].instructions).toBe('Keep this prompt')
+    expect(store.settings.activeInstructionPresetId).toBe('custom')
+  })
+
   test('uses sampler hints when optional sampler fields are empty', () => {
     const store = emptyStore()
     expect(resolveSamplers(store.settings)).toEqual({

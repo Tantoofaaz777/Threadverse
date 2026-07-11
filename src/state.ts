@@ -212,7 +212,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
 export function normalizeStore(value: unknown): ThreadverseStore {
   if (!value || typeof value !== 'object') return emptyStore()
   const candidate = value as Partial<ThreadverseStore>
-  if (candidate.version !== 1 || !isRecord(candidate.chats)) {
+  if (candidate.version !== 1) {
     return emptyStore()
   }
   const savedSettings = candidate.settings as Partial<ThreadverseSettings> & {
