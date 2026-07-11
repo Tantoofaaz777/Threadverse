@@ -858,25 +858,28 @@ export function setup(ctx: SpindleFrontendContext) {
     deleteInstructionPresetButton.disabled = settingsDraft.instructionPresets.length <= 1
   }
 
+  function flushAutomaticSave(): void {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+    if (!settingsDraft) return
+    send({
+      type: 'threadverse:auto_save_settings',
+      settings: {
+        connectionId: settingsDraft.connectionId,
+        maxOutputTokens: settingsDraft.maxOutputTokens,
+        temperature: settingsDraft.temperature,
+        topP: settingsDraft.topP,
+        previousRangeLimit: settingsDraft.previousRangeLimit,
+        fandomThreadLimit: settingsDraft.fandomThreadLimit,
+        maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
+      },
+    })
+  }
+
   function scheduleAutomaticSave(): void {
     if (!settingsDraft) return
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
-    autoSaveTimer = setTimeout(() => {
-      autoSaveTimer = null
-      if (!settingsDraft) return
-      send({
-        type: 'threadverse:auto_save_settings',
-        settings: {
-          connectionId: settingsDraft.connectionId,
-          maxOutputTokens: settingsDraft.maxOutputTokens,
-          temperature: settingsDraft.temperature,
-          topP: settingsDraft.topP,
-          previousRangeLimit: settingsDraft.previousRangeLimit,
-          fandomThreadLimit: settingsDraft.fandomThreadLimit,
-          maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
-        },
-      })
-    }, 350)
+    autoSaveTimer = setTimeout(flushAutomaticSave, 350)
   }
 
   function handleMaintainFandomChange(): void {
@@ -1399,10 +1402,20 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'expand-instructions') expandInstructions()
   }
 
+  const flushPendingAutomaticSave = () => {
+    if (autoSaveTimer) flushAutomaticSave()
+  }
+
+  const flushWhenHidden = () => {
+    if (document.visibilityState === 'hidden') flushPendingAutomaticSave()
+  }
+
   shell.addEventListener('click', onClick)
   search.addEventListener('input', renderMessages)
   unusedOnly.addEventListener('change', renderMessages)
   maintainFandomToggle.addEventListener('change', handleMaintainFandomChange)
+  window.addEventListener('pagehide', flushPendingAutomaticSave)
+  document.addEventListener('visibilitychange', flushWhenHidden)
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
@@ -1531,7 +1544,7 @@ export function setup(ctx: SpindleFrontendContext) {
   loadActiveChat()
 
   return () => {
-    if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    if (autoSaveTimer) flushAutomaticSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
     unsubscribeActivate()
     for (const unsubscribe of chatEventUnsubscribers) unsubscribe()
@@ -1541,6 +1554,8 @@ export function setup(ctx: SpindleFrontendContext) {
     search.removeEventListener('input', renderMessages)
     unusedOnly.removeEventListener('change', renderMessages)
     maintainFandomToggle.removeEventListener('change', handleMaintainFandomChange)
+    window.removeEventListener('pagehide', flushPendingAutomaticSave)
+    document.removeEventListener('visibilitychange', flushWhenHidden)
     destroySettingsComponents()
     drawer.destroy()
     removeStyle()
