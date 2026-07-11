@@ -2,6 +2,8 @@
 
 Threadverse is a Lumiverse Spindle extension for turning selected roleplay scenes into a fictional fandom discussion feed. Generated content lives in the extension UI and is never inserted into the roleplay chat.
 
+Threadverse 1.0 is stable for personal use, with mobile-first navigation, defensive persistence, and background generation that never interrupts the active roleplay view.
+
 ## Current state
 
 The extension currently includes:
@@ -35,6 +37,7 @@ The Feed tab renders the newest round by default and keeps older rounds availabl
 
 ```bash
 bun install
+bun test
 bun run typecheck
 bun run build
 ```
