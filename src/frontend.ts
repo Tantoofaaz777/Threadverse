@@ -1131,19 +1131,20 @@ export function setup(ctx: SpindleFrontendContext) {
     regenerateButton.className = 'threadverse-button'
     regenerateButton.dataset.action = 'regenerate'
     regenerateButton.dataset.roundId = round.id
-    regenerateButton.disabled = generationPending
+    regenerateButton.disabled = generationPending || operationPending
     regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
     deleteButton.className = 'threadverse-button threadverse-button--danger'
     deleteButton.dataset.action = 'delete-round'
     deleteButton.dataset.roundId = round.id
-    deleteButton.disabled = generationPending
+    deleteButton.disabled = generationPending || operationPending
     deleteButton.textContent = 'Delete'
     toolbar.append(selectTarget, regenerateButton, deleteButton)
     feedList.appendChild(toolbar)
     feedRoundHandle = ctx.components.mountSelect(selectTarget, {
       value: round.id,
+      disabled: generationPending || operationPending,
       triggerClassName: 'threadverse-secondary-input',
       searchThreshold: 6,
       searchPlaceholder: 'Search rounds...',
@@ -1345,10 +1346,11 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function regenerate(roundId: string): void {
-    if (!activeChat || generationPending) return
+    if (!activeChat || generationPending || operationPending) return
     operationPending = true
     generationChatId = activeChat.id
     generationLeftOrigin = false
+    renderFeed()
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
 
@@ -1364,6 +1366,7 @@ export function setup(ctx: SpindleFrontendContext) {
     })
     if (!result.confirmed || !activeChat) return
     operationPending = true
+    renderFeed()
     send({ type: 'threadverse:delete_round', chatId: activeChat.id, roundId })
   }
 
@@ -1451,6 +1454,7 @@ export function setup(ctx: SpindleFrontendContext) {
         showError(message.error)
       }
       renderContinuity()
+      renderFeed()
       return
     }
 
