@@ -124,6 +124,33 @@ describe('Threadverse continuity', () => {
     })
   })
 
+  test('rekeys recovered chats and repairs duplicate round IDs', () => {
+    const message = (id: string, index: number) => ({
+      id,
+      index,
+      role: 'assistant',
+      content: `Message ${index}`,
+    })
+    const store = normalizeStore({
+      version: 1,
+      chats: {
+        'corrupted-key': {
+          chatId: 'real-chat-id',
+          chatName: 'Recovered chat',
+          rounds: [
+            { id: 'duplicate', messages: [message('m1', 1)] },
+            { id: 'duplicate', messages: [message('m2', 2)] },
+          ],
+        },
+      },
+    })
+
+    expect(store.chats['corrupted-key']).toBeUndefined()
+    expect(store.chats['real-chat-id'].rounds.map((round) => round.sequence)).toEqual([1, 2])
+    expect(new Set(store.chats['real-chat-id'].rounds.map((round) => round.id)).size).toBe(2)
+    expect(store.chats['real-chat-id'].rounds[1].id).toBe('duplicate-recovered-2')
+  })
+
   test('uses sampler hints when optional sampler fields are empty', () => {
     const store = emptyStore()
     expect(resolveSamplers(store.settings)).toEqual({

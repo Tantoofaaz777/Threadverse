@@ -176,19 +176,34 @@ function normalizeStoredRound(value: unknown, sequence: number): StoredRound | n
 
 function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
   if (!isRecord(value)) return {}
-  const chats: Record<string, ChatContinuity> = {}
+  const chats: Record<string, ChatContinuity> = Object.create(null) as Record<string, ChatContinuity>
   for (const [chatKey, rawChat] of Object.entries(value)) {
     if (!isRecord(rawChat) || !Array.isArray(rawChat.rounds)) continue
-    const rounds = rawChat.rounds
+    const recoveredRounds = rawChat.rounds
       .map((round, index) => normalizeStoredRound(round, index + 1))
       .filter((round): round is StoredRound => Boolean(round))
-      .map((round, index) => ({ ...round, sequence: index + 1 }))
-    if (rounds.length === 0) continue
+    if (recoveredRounds.length === 0) continue
     const chatId = typeof rawChat.chatId === 'string' && rawChat.chatId ? rawChat.chatId : chatKey
-    chats[chatKey] = {
+    if (!chatId) continue
+    const existing = chats[chatId]
+    const rounds = existing ? [...existing.rounds, ...recoveredRounds] : recoveredRounds
+    const usedRoundIds = new Set<string>()
+    const uniqueRounds = rounds.map((round, index) => {
+      let id = round.id
+      let suffix = 2
+      while (usedRoundIds.has(id)) {
+        id = `${round.id}-recovered-${suffix}`
+        suffix += 1
+      }
+      usedRoundIds.add(id)
+      return { ...round, id, sequence: index + 1 }
+    })
+    chats[chatId] = {
       chatId,
-      chatName: typeof rawChat.chatName === 'string' ? rawChat.chatName : 'Untitled chat',
-      rounds,
+      chatName: typeof rawChat.chatName === 'string'
+        ? rawChat.chatName
+        : existing?.chatName ?? 'Untitled chat',
+      rounds: uniqueRounds,
     }
   }
   return chats
