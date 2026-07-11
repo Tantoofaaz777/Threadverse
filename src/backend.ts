@@ -152,15 +152,16 @@ async function sendActiveChat(
   userId: string,
   options?: { notice?: string; error?: string },
   expectedChatId?: string,
+  requestId?: number,
 ): Promise<void> {
   if (!hasChatPermissions()) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], requestId, error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
     return
   }
   const activeChat = await spindle.chats.getActive(userId)
   if (expectedChatId && activeChat?.id !== expectedChatId) return
   if (!activeChat) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], error: 'Open a roleplay chat, then refresh this list.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
     return
   }
   const [rawMessages, store] = await Promise.all([spindle.chat.getMessages(activeChat.id), loadStore(userId)])
@@ -169,7 +170,7 @@ async function sendActiveChat(
     type: 'threadverse:active_chat', chat: { id: activeChat.id, name: activeChat.name },
     messages: rawMessages.map((message, index) => ({ id: message.id, index: index + 1, role: message.role, content: message.content })),
     rounds: summarizeRounds(continuity?.rounds ?? []), feedRounds: feedRounds(continuity?.rounds ?? []),
-    error: options?.error, notice: options?.notice,
+    requestId, error: options?.error, notice: options?.notice,
   }, userId)
 }
 
@@ -347,7 +348,10 @@ async function resetContinuity(chatId: string, userId: string): Promise<void> {
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   if (!isFrontendMessage(payload)) return
   try {
-    if (payload.type === 'threadverse:load_active_chat') { await sendActiveChat(userId); return }
+    if (payload.type === 'threadverse:load_active_chat') {
+      await sendActiveChat(userId, undefined, undefined, payload.requestId)
+      return
+    }
     if (payload.type === 'threadverse:load_settings') { await sendSettingsState(userId); return }
     if (payload.type === 'threadverse:auto_save_settings') { await saveAutomaticSettings(payload.settings, userId); return }
     if (payload.type === 'threadverse:save_prompt') { await savePromptSettings(payload.settings, userId); return }

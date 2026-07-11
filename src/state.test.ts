@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
 import { parseThreadverseFeed } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
-import { shouldAutoOpenGeneratedFeed } from './generation-navigation'
+import { shouldAcceptActiveChatResponse, shouldAutoOpenGeneratedFeed } from './generation-navigation'
 import {
   DEFAULT_SETTINGS,
   applyAutomaticSettings,
@@ -50,6 +50,12 @@ describe('Threadverse continuity', () => {
       generationChatId: 'chat-a',
       leftOrigin: false,
     })).toBe(false)
+  })
+
+  test('ignores stale requested chat states but accepts unsolicited updates', () => {
+    expect(shouldAcceptActiveChatResponse(4, 5)).toBe(false)
+    expect(shouldAcceptActiveChatResponse(5, 5)).toBe(true)
+    expect(shouldAcceptActiveChatResponse(undefined, 5)).toBe(true)
   })
 
   test('clicking either selected endpoint toggles only that endpoint off', () => {

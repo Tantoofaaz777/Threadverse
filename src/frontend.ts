@@ -16,7 +16,7 @@ import type {
   ThreadverseTab,
 } from './shared'
 import { toggleRangeEndpoint } from './range-selection'
-import { shouldAutoOpenGeneratedFeed } from './generation-navigation'
+import { shouldAcceptActiveChatResponse, shouldAutoOpenGeneratedFeed } from './generation-navigation'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -660,6 +660,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
   let defaultInstructions = ''
@@ -1309,14 +1310,19 @@ export function setup(ctx: SpindleFrontendContext) {
   function loadActiveChat(): void {
     clearError()
     messageList.innerHTML = '<div class="threadverse-empty">Loading the active chat...</div>'
-    send({ type: 'threadverse:load_active_chat' })
+    requestActiveChat()
+  }
+
+  function requestActiveChat(): void {
+    latestChatRequestId += 1
+    send({ type: 'threadverse:load_active_chat', requestId: latestChatRequestId })
   }
 
   function scheduleChatRefresh(): void {
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
     chatRefreshTimer = setTimeout(() => {
       chatRefreshTimer = null
-      send({ type: 'threadverse:load_active_chat' })
+      requestActiveChat()
     }, 120)
   }
 
@@ -1520,6 +1526,8 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     if (message.type === 'threadverse:active_chat') {
+      if (!shouldAcceptActiveChatResponse(message.requestId, latestChatRequestId)) return
+      if (message.requestId === undefined) latestChatRequestId += 1
       const previousStartId = startIndex === null ? null : messages[startIndex]?.id
       const previousEndId = endIndex === null ? null : messages[endIndex]?.id
       activeChat = message.chat

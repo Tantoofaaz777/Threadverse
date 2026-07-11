@@ -10,3 +10,10 @@ export function shouldAutoOpenGeneratedFeed(state: GenerationNavigationState): b
     && state.generationChatId === state.completedChatId
     && !state.leftOrigin
 }
+
+export function shouldAcceptActiveChatResponse(
+  responseRequestId: number | undefined,
+  latestRequestId: number,
+): boolean {
+  return responseRequestId === undefined || responseRequestId === latestRequestId
+}

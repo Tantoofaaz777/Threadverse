@@ -88,7 +88,7 @@ export interface ConnectionSummary {
 }
 
 export type FrontendToBackendMessage =
-  | { type: 'threadverse:load_active_chat' }
+  | { type: 'threadverse:load_active_chat'; requestId: number }
   | { type: 'threadverse:load_settings' }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
   | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
@@ -112,6 +112,7 @@ export type BackendToFrontendMessage =
       messages: ChatMessageSummary[]
       rounds: RoundSummary[]
       feedRounds: FeedRound[]
+      requestId?: number
       error?: string
       notice?: string
     }
