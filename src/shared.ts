@@ -133,8 +133,6 @@ export type BackendToFrontendMessage =
       settings: ThreadverseSettingsPayload
       defaultInstructions: string
       connections: ConnectionSummary[]
-      notice?: string
-      error?: string
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
   | { type: 'threadverse:settings_save_result'; scope: 'automatic' | 'prompt'; error?: string }

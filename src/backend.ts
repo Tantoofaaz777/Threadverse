@@ -66,7 +66,7 @@ async function getConnections(userId: string): Promise<ConnectionSummary[]> {
   return (await spindle.connections.list(userId)).map(toConnectionSummary)
 }
 
-async function sendSettingsState(userId: string, options?: { error?: string }): Promise<void> {
+async function sendSettingsState(userId: string): Promise<void> {
   const [store, connections] = await Promise.all([loadStore(userId), getConnections(userId)])
   const settings = { ...store.settings }
   const selected = connections.find((item) => item.id === settings.connectionId)
@@ -75,9 +75,6 @@ async function sendSettingsState(userId: string, options?: { error?: string }): 
   else if (!connections.some((item) => item.id === settings.connectionId)) settings.connectionId = selected.id
   send({
     type: 'threadverse:settings_state', settings, defaultInstructions: DEFAULT_INSTRUCTIONS, connections,
-    error: options?.error ?? (!spindle.permissions.has('generation')
-      ? 'Grant the Generation permission to choose a Lumiverse connection and model.'
-      : connections.length === 0 ? 'No Lumiverse LLM connections are available.' : undefined),
   }, userId)
 }
 
@@ -355,7 +352,15 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Threadverse could not complete the operation.'
     spindle.log.error(`[Threadverse] ${message}`)
-    if (payload.type === 'threadverse:load_settings') { try { await sendSettingsState(userId, { error: message }) } catch { send({ type: 'threadverse:operation_error', error: message }, userId) }; return }
+    if (payload.type === 'threadverse:load_settings') {
+      spindle.toast.error(message, { userId })
+      try {
+        await sendSettingsState(userId)
+      } catch {
+        send({ type: 'threadverse:operation_error', error: message }, userId)
+      }
+      return
+    }
     if (payload.type === 'threadverse:auto_save_settings' || payload.type === 'threadverse:save_prompt') {
       const scope = payload.type === 'threadverse:save_prompt' ? 'prompt' : 'automatic'; spindle.toast.error(message, { userId }); send({ type: 'threadverse:settings_save_result', scope, error: message }, userId); return
     }
