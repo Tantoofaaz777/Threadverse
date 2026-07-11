@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
 import { parseThreadverseFeed } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
-import { shouldAcceptActiveChatResponse, shouldAutoOpenGeneratedFeed } from './generation-navigation'
+import { shouldAcceptActiveChatResponse } from './chat-response'
 import {
   DEFAULT_SETTINGS,
   applyAutomaticSettings,
@@ -14,27 +14,6 @@ import {
 } from './state'
 
 describe('Threadverse continuity', () => {
-  test('only auto-opens a completed feed when its chat was never left', () => {
-    expect(shouldAutoOpenGeneratedFeed({
-      completedChatId: 'chat-a',
-      activeChatId: 'chat-a',
-      generationChatId: 'chat-a',
-      leftOrigin: false,
-    })).toBe(true)
-    expect(shouldAutoOpenGeneratedFeed({
-      completedChatId: 'chat-a',
-      activeChatId: 'chat-a',
-      generationChatId: 'chat-a',
-      leftOrigin: true,
-    })).toBe(false)
-    expect(shouldAutoOpenGeneratedFeed({
-      completedChatId: 'chat-a',
-      activeChatId: 'chat-b',
-      generationChatId: 'chat-a',
-      leftOrigin: false,
-    })).toBe(false)
-  })
-
   test('ignores stale requested chat states but accepts unsolicited updates', () => {
     expect(shouldAcceptActiveChatResponse(4, 5)).toBe(false)
     expect(shouldAcceptActiveChatResponse(5, 5)).toBe(true)

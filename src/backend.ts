@@ -238,6 +238,12 @@ async function finishSuccessfulGeneration(
     spindle.log.error(`[Threadverse] Round saved, but the frontend refresh failed: ${message}`)
   }
   send({ type: 'threadverse:generation_state', status: 'completed', chatId, roundId }, userId)
+  try {
+    spindle.toast.success(notice, { userId })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown toast error.'
+    spindle.log.error(`[Threadverse] Round saved, but the completion toast failed: ${message}`)
+  }
 }
 
 async function finishSuccessfulMutation(
