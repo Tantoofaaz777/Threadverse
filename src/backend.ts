@@ -239,6 +239,21 @@ async function finishSuccessfulGeneration(
   send({ type: 'threadverse:generation_state', status: 'completed', chatId, roundId }, userId)
 }
 
+async function finishSuccessfulMutation(
+  operation: 'delete_round' | 'reset_continuity',
+  chatId: string,
+  notice: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await sendActiveChat(userId, { notice }, chatId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown refresh error.'
+    spindle.log.error(`[Threadverse] Mutation saved, but the frontend refresh failed: ${message}`)
+  }
+  send({ type: 'threadverse:mutation_completed', operation, chatId }, userId)
+}
+
 async function selectMessages(chatId: string, startId: string, endId: string, userId: string) {
   if (!hasChatPermissions()) throw new Error('Grant the Chats and Chat Mutation permissions before generating.')
   const chat = await spindle.chats.getActive(userId)
@@ -313,7 +328,12 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
     if (continuity.rounds.length === 0) delete store.chats[chatId]
     await saveStore(store, userId)
   })
-  await sendActiveChat(userId, { notice: `Round ${deletedSequence} deleted.` })
+  await finishSuccessfulMutation(
+    'delete_round',
+    chatId,
+    `Round ${deletedSequence} deleted.`,
+    userId,
+  )
 }
 
 async function resetContinuity(chatId: string, userId: string): Promise<void> {
@@ -321,7 +341,7 @@ async function resetContinuity(chatId: string, userId: string): Promise<void> {
   if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
   activeGenerations.get(userId)?.abort()
   await queueStoreWrite(userId, async () => { const store = await loadStore(userId); delete store.chats[chatId]; await saveStore(store, userId) })
-  await sendActiveChat(userId, { notice: 'Continuity reset for this chat.' })
+  await finishSuccessfulMutation('reset_continuity', chatId, 'Continuity reset for this chat.', userId)
 }
 
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {

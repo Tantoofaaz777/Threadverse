@@ -1469,6 +1469,13 @@ export function setup(ctx: SpindleFrontendContext) {
       return
     }
 
+    if (message.type === 'threadverse:mutation_completed') {
+      operationPending = false
+      renderContinuity()
+      renderFeed()
+      return
+    }
+
     if (message.type === 'threadverse:settings_state') {
       defaultInstructions = message.defaultInstructions
       mountSettingsForm(message.settings, message.connections)
@@ -1513,7 +1520,6 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     if (message.type === 'threadverse:active_chat') {
-      if (message.notice) operationPending = false
       const previousStartId = startIndex === null ? null : messages[startIndex]?.id
       const previousEndId = endIndex === null ? null : messages[endIndex]?.id
       activeChat = message.chat

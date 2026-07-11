@@ -117,6 +117,11 @@ export type BackendToFrontendMessage =
     }
   | { type: 'threadverse:operation_error'; error: string }
   | {
+      type: 'threadverse:mutation_completed'
+      operation: 'delete_round' | 'reset_continuity'
+      chatId: string
+    }
+  | {
       type: 'threadverse:generation_state'
       status: 'started' | 'completed' | 'cancelled' | 'error'
       chatId: string
