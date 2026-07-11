@@ -11,24 +11,7 @@ import {
   normalizeStore,
   resolveContinuity,
   resolveSamplers,
-  selectPreviousRounds,
-  type StoredRound,
 } from './state'
-
-function round(sequence: number): StoredRound {
-  return {
-    id: `round-${sequence}`,
-    sequence,
-    createdAt: new Date(sequence * 1000).toISOString(),
-    startMessageId: `start-${sequence}`,
-    endMessageId: `end-${sequence}`,
-    startIndex: sequence * 10,
-    endIndex: sequence * 10 + 2,
-    messageCount: 3,
-    messages: [],
-    feed: null,
-  }
-}
 
 describe('Threadverse continuity', () => {
   test('only auto-opens a completed feed when its chat was never left', () => {
@@ -238,21 +221,6 @@ describe('Threadverse continuity', () => {
     })
     expect(next.temperature).toBe(0.6)
     expect(next.activeInstructionPresetId).toBe('custom')
-  })
-
-  test('keeps the newest configured ranges in chronological order', () => {
-    const store = emptyStore()
-    store.settings.previousRangeLimit = 3
-    store.chats.chat = {
-      chatId: 'chat',
-      chatName: 'RP',
-      rounds: [round(1), round(2), round(3), round(4)],
-    }
-
-    expect(selectPreviousRounds(store, 'chat').map((item) => item.sequence)).toEqual([2, 3, 4])
-
-    store.settings.previousRangeLimit = 0
-    expect(selectPreviousRounds(store, 'chat')).toEqual([])
   })
 
   test('builds story and fandom blocks in chronological order', () => {

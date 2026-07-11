@@ -292,9 +292,3 @@ export function feedRounds(rounds: StoredRound[]) {
     messageIds: messages.map((message) => message.id),
   }))
 }
-
-export function selectPreviousRounds(store: ThreadverseStore, chatId: string): StoredRound[] {
-  const rounds = store.chats[chatId]?.rounds ?? []
-  const limit = Math.max(0, resolveContinuity(store.settings).previousRangeLimit)
-  return limit === 0 ? [] : rounds.slice(-limit)
-}
