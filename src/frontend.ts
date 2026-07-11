@@ -654,6 +654,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let endIndex: number | null = null
   let operationPending = false
   let generationPending = false
+  let generationCancellable = false
   let generationChatId: string | null = null
   let generationLeftOrigin = false
   let promptSavePending = false
@@ -672,6 +673,15 @@ export function setup(ctx: SpindleFrontendContext) {
   function clearError(): void {
     contextError.textContent = ''
     contextError.hidden = true
+  }
+
+  function setGenerationPending(pending: boolean, cancellable = false): void {
+    generationPending = pending
+    generationCancellable = pending && cancellable
+    cancelButton.hidden = !generationCancellable
+    saveButton.textContent = pending
+      ? generationCancellable ? 'Generating...' : 'Starting...'
+      : 'Generate Thread'
   }
 
   function showError(message: string): void {
@@ -1164,10 +1174,14 @@ export function setup(ctx: SpindleFrontendContext) {
       status.className = 'threadverse-card threadverse-feed-toolbar'
       const copy = document.createElement('span')
       copy.className = 'threadverse-copy'
-      copy.textContent = 'Generating fandom thread...'
-      const cancel = document.createElement('button')
-      cancel.type = 'button'; cancel.className = 'threadverse-button'; cancel.dataset.action = 'cancel-generation'; cancel.textContent = 'Cancel'
-      status.append(copy, cancel); feedList.appendChild(status)
+      copy.textContent = generationCancellable ? 'Generating fandom thread...' : 'Starting generation...'
+      status.appendChild(copy)
+      if (generationCancellable) {
+        const cancel = document.createElement('button')
+        cancel.type = 'button'; cancel.className = 'threadverse-button'; cancel.dataset.action = 'cancel-generation'; cancel.textContent = 'Cancel'
+        status.appendChild(cancel)
+      }
+      feedList.appendChild(status)
     }
 
     if (!round.feed) {
@@ -1318,7 +1332,7 @@ export function setup(ctx: SpindleFrontendContext) {
       ? (payload as { chatId?: unknown }).chatId
       : undefined
     if (
-      (generationPending || operationPending)
+      generationPending
       && generationChatId
       && (typeof nextChatId === 'string' || nextChatId === null)
       && nextChatId !== generationChatId
@@ -1330,9 +1344,9 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function generateSelectedRange(): void {
     const bounds = selectedBounds()
-    if (!bounds || !activeChat || operationPending) return
+    if (!bounds || !activeChat || operationPending || generationPending) return
 
-    operationPending = true
+    setGenerationPending(true)
     generationChatId = activeChat.id
     generationLeftOrigin = false
     clearError()
@@ -1347,7 +1361,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function regenerate(roundId: string): void {
     if (!activeChat || generationPending || operationPending) return
-    operationPending = true
+    setGenerationPending(true)
     generationChatId = activeChat.id
     generationLeftOrigin = false
     renderFeed()
@@ -1371,7 +1385,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function resetContinuity(): void {
-    if (!activeChat || operationPending) return
+    if (!activeChat || operationPending || generationPending) return
     operationPending = true
     clearError()
     renderContinuity()
@@ -1435,10 +1449,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (generationChatId !== message.chatId) generationLeftOrigin = false
         generationChatId = message.chatId
       }
-      generationPending = message.status === 'started'
-      operationPending = generationPending
-      cancelButton.hidden = !generationPending
-      saveButton.textContent = generationPending ? 'Generating...' : 'Generate Thread'
+      setGenerationPending(message.status === 'started', message.status === 'started')
       if (message.status === 'completed') {
         if (message.roundId) selectedFeedRoundId = message.roundId
         if (shouldOpenCompletedFeed) switchTab('feed')
@@ -1459,7 +1470,6 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     if (message.type === 'threadverse:settings_state') {
-      operationPending = false
       defaultInstructions = message.defaultInstructions
       mountSettingsForm(message.settings, message.connections)
       return
@@ -1503,7 +1513,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     if (message.type === 'threadverse:active_chat') {
-      operationPending = false
+      if (message.notice) operationPending = false
       const previousStartId = startIndex === null ? null : messages[startIndex]?.id
       const previousEndId = endIndex === null ? null : messages[endIndex]?.id
       activeChat = message.chat
