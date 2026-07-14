@@ -368,10 +368,6 @@ const STYLES = `
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
   .threadverse-feed-round-select { min-width: 0; }
   .threadverse-reddit { overflow: hidden; padding: 0; }
-  .threadverse-reddit-community {
-    padding: 10px 12px; border-bottom: 1px solid var(--lumiverse-border);
-    color: var(--lumiverse-text-muted); font-size: calc(10px * var(--threadverse-feed-font-scale, 1)); font-weight: 700;
-  }
   .threadverse-reddit-post { padding: 12px; border-bottom: 1px solid var(--lumiverse-border); }
   .threadverse-reddit-title { margin: 5px 0 9px; color: var(--lumiverse-text); font-size: calc(16px * var(--threadverse-feed-font-scale, 1)); line-height: 1.3; }
   .threadverse-reddit-body, .threadverse-comment-body {
@@ -384,12 +380,6 @@ const STYLES = `
     font-size: calc(9px * var(--threadverse-feed-font-scale, 1)); font-weight: 800; text-transform: uppercase;
   }
   .threadverse-author { overflow: hidden; color: var(--lumiverse-text); font-size: calc(10px * var(--threadverse-feed-font-scale, 1)); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-  .threadverse-flair {
-    overflow: hidden; max-width: 120px; padding: 2px 5px; border-radius: calc(var(--lumiverse-radius) / 2);
-    background: var(--lumiverse-primary-020, rgba(147, 112, 219, .2)); color: var(--lumiverse-primary, var(--lumiverse-text));
-    font-size: calc(8px * var(--threadverse-feed-font-scale, 1)); text-overflow: ellipsis; white-space: nowrap;
-  }
-  .threadverse-time { color: var(--lumiverse-text-muted); font-size: calc(8px * var(--threadverse-feed-font-scale, 1)); white-space: nowrap; }
   .threadverse-reddit-post .threadverse-reddit-body { margin-top: 10px; }
   .threadverse-reddit-actions { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: var(--lumiverse-text-muted); }
   .threadverse-action-button {
@@ -1182,7 +1172,7 @@ export function setup(ctx: SpindleFrontendContext) {
       .slice(0, 2).map((part) => part[0]).join('').slice(0, 2) || '?'
   }
 
-  function authorRow(username: string, flair: string | null, timestamp: string | null): HTMLElement {
+  function authorRow(username: string): HTMLElement {
     const row = document.createElement('div')
     row.className = 'threadverse-author-row'
     const avatar = document.createElement('span')
@@ -1193,18 +1183,6 @@ export function setup(ctx: SpindleFrontendContext) {
     author.className = 'threadverse-author'
     author.textContent = username
     row.append(avatar, author)
-    if (flair) {
-      const badge = document.createElement('span')
-      badge.className = 'threadverse-flair'
-      badge.textContent = flair
-      row.appendChild(badge)
-    }
-    if (timestamp) {
-      const time = document.createElement('span')
-      time.className = 'threadverse-time'
-      time.textContent = timestamp
-      row.appendChild(time)
-    }
     return row
   }
 
@@ -1275,7 +1253,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (depth === 0) element.classList.add('threadverse-comment--root')
     const content = document.createElement('div')
     content.className = 'threadverse-comment-content'
-    content.appendChild(authorRow(comment.username, comment.flair, comment.timestamp))
+    content.appendChild(authorRow(comment.username))
     const body = document.createElement('p')
     body.className = 'threadverse-comment-body'
     body.textContent = comment.body
@@ -1381,12 +1359,9 @@ export function setup(ctx: SpindleFrontendContext) {
     const feed = round.feed
     const card = document.createElement('article')
     card.className = 'threadverse-card threadverse-reddit'
-    const community = document.createElement('div')
-    community.className = 'threadverse-reddit-community'
-    community.textContent = `r/${feed.subreddit} · Round ${round.sequence}`
     const post = document.createElement('section')
     post.className = 'threadverse-reddit-post'
-    post.appendChild(authorRow(feed.post.username, feed.post.flair, feed.post.timestamp))
+    post.appendChild(authorRow(feed.post.username))
     const title = document.createElement('h2')
     title.className = 'threadverse-reddit-title'; title.textContent = feed.title
     const body = document.createElement('p')
@@ -1395,7 +1370,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const comments = document.createElement('section')
     comments.className = 'threadverse-comments'
     feed.comments.forEach((comment) => comments.appendChild(renderComment(comment, 0)))
-    card.append(community, post, comments)
+    card.append(post, comments)
     feedList.appendChild(card)
   }
 

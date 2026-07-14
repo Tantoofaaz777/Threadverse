@@ -22,7 +22,7 @@ The extension currently includes:
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
 - cancellable streamed generation with live estimated output-token progress and atomic round persistence;
-- tolerant validation of the model's JSON feed response;
+- tolerant validation of a compact JSON feed response, including legacy feed compatibility;
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
 - a mobile-safe Feed text-size slider with automatic persistence;

@@ -12,6 +12,14 @@ import {
 } from './shared'
 import { parseThreadverseFeed } from './feed'
 
+const LEGACY_DEFAULT_INSTRUCTIONS = `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
+
+Treat PREVIOUS CONTEXT as events the fandom already knows. Treat RECENT CONTEXT as the new material the current discussion should focus on. Use FANDOM CONTINUITY to preserve recurring usernames, theories, opinions, jokes, and disagreements from earlier threads.
+
+Create a convincing Reddit-style discussion with a post title, an opening post, varied commenters, nested replies, votes, flairs, theories, jokes, criticism, shipping, and genuine disagreement where appropriate. Do not continue or rewrite the story itself. Discuss it as an audience would.`
+
+const CURRENT_DEFAULT_INSTRUCTIONS = LEGACY_DEFAULT_INSTRUCTIONS.replace('votes, flairs, theories', 'votes, theories')
+
 export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
   feed: ThreadverseFeed | null
@@ -43,11 +51,7 @@ export const DEFAULT_SETTINGS: ThreadverseSettings = {
   instructionPresets: [{
     id: 'default',
     name: 'Default',
-    instructions: `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
-
-Treat PREVIOUS CONTEXT as events the fandom already knows. Treat RECENT CONTEXT as the new material the current discussion should focus on. Use FANDOM CONTINUITY to preserve recurring usernames, theories, opinions, jokes, and disagreements from earlier threads.
-
-Create a convincing Reddit-style discussion with a post title, an opening post, varied commenters, nested replies, votes, flairs, theories, jokes, criticism, shipping, and genuine disagreement where appropriate. Do not continue or rewrite the story itself. Discuss it as an audience would.`,
+    instructions: CURRENT_DEFAULT_INSTRUCTIONS,
   }],
   activeInstructionPresetId: 'default',
 }
@@ -239,7 +243,12 @@ export function normalizeStore(value: unknown): ThreadverseStore {
         presetIds.add(preset.id)
         presetNames.add(normalizedName)
         return true
-      }).map((preset) => ({ ...preset }))
+      }).map((preset) => ({
+        ...preset,
+        instructions: preset.instructions === LEGACY_DEFAULT_INSTRUCTIONS
+          ? CURRENT_DEFAULT_INSTRUCTIONS
+          : preset.instructions,
+      }))
     : []
   const instructionPresets = savedPresets.length > 0
     ? savedPresets

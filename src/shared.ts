@@ -24,24 +24,18 @@ export interface RoundSummary {
 }
 
 export interface ThreadverseComment {
-  id: string
   username: string
   body: string
   score: number
-  flair: string | null
-  timestamp: string | null
   replies: ThreadverseComment[]
 }
 
 export interface ThreadverseFeed {
-  subreddit: string
   title: string
   post: {
     username: string
     body: string
     score: number
-    flair: string | null
-    timestamp: string | null
   }
   comments: ThreadverseComment[]
 }

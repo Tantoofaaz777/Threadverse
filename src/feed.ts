@@ -17,14 +17,6 @@ function stringFrom(object: JsonObject, keys: string[], label: string): string {
   throw new Error(`${label} is missing.`)
 }
 
-function optionalString(object: JsonObject, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = object[key]
-    if (typeof value === 'string') return value.trim() || null
-  }
-  return null
-}
-
 function scoreFrom(object: JsonObject): number {
   const value = object.score ?? object.upvotes ?? object.votes
   return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0
@@ -64,7 +56,6 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
   const post = asObject(root.post ?? root.openingPost ?? root.opening_post, 'Post')
   const rawComments = root.comments
   if (!Array.isArray(rawComments)) throw new Error('Feed comments must be a JSON array.')
-  let nextId = 1
   let totalComments = 0
 
   const parseComment = (value: unknown, depth: number): ThreadverseComment => {
@@ -74,30 +65,43 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
     const replies = comment.replies ?? comment.children ?? []
     if (!Array.isArray(replies)) throw new Error('Comment replies must be a JSON array.')
     return {
-      id: optionalString(comment, ['id']) ?? `comment-${nextId++}`,
       username: stringFrom(comment, ['username', 'author', 'user'], 'Comment username'),
       body: stringFrom(comment, ['body', 'content', 'text'], 'Comment body'),
       score: scoreFrom(comment),
-      flair: optionalString(comment, ['flair']),
-      timestamp: optionalString(comment, ['timestamp', 'time']),
       replies: replies.map((reply) => parseComment(reply, depth + 1)),
     }
   }
 
   return {
-    subreddit: stringFrom(root, ['subreddit', 'community'], 'Subreddit'),
     title: stringFrom(root, ['title'], 'Thread title'),
     post: {
       username: stringFrom(post, ['username', 'author', 'user'], 'Post username'),
       body: stringFrom(post, ['body', 'content', 'text'], 'Post body'),
       score: scoreFrom(post),
-      flair: optionalString(post, ['flair']),
-      timestamp: optionalString(post, ['timestamp', 'time']),
     },
     comments: rawComments.map((comment) => parseComment(comment, 0)),
   }
 }
 
 export function serializeFeedForContinuity(feed: ThreadverseFeed): string {
-  return JSON.stringify(feed, null, 2)
+  const serializeComment = (comment: ThreadverseComment): JsonObject => {
+    const serialized: JsonObject = {
+      username: comment.username,
+      body: comment.body,
+      score: comment.score,
+    }
+    if (comment.replies.length > 0) {
+      serialized.replies = comment.replies.map(serializeComment)
+    }
+    return serialized
+  }
+  return JSON.stringify({
+    title: feed.title,
+    post: {
+      username: feed.post.username,
+      body: feed.post.body,
+      score: feed.post.score,
+    },
+    comments: feed.comments.map(serializeComment),
+  })
 }

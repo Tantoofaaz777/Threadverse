@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
-import { parseThreadverseFeed } from './feed'
+import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { DEFAULT_FEED_FONT_SCALE } from './shared'
@@ -181,6 +181,22 @@ describe('Threadverse continuity', () => {
     ])
   })
 
+  test('removes the obsolete flair request from the untouched legacy default prompt', () => {
+    const legacyInstructions = DEFAULT_SETTINGS.instructionPresets[0].instructions
+      .replace('votes, theories', 'votes, flairs, theories')
+    const store = normalizeStore({
+      version: 1,
+      chats: {},
+      settings: {
+        instructionPresets: [{ id: 'default', name: 'Default', instructions: legacyInstructions }],
+        activeInstructionPresetId: 'default',
+      },
+    })
+
+    expect(store.settings.instructionPresets[0].instructions).toContain('votes, theories')
+    expect(store.settings.instructionPresets[0].instructions).not.toContain('flairs')
+  })
+
   test('automatic saves never overwrite unsaved prompt data', () => {
     const current = emptyStore().settings
     current.instructionPresets[0].instructions = 'Prompt draft'
@@ -229,14 +245,52 @@ describe('Threadverse continuity', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
   })
 
+  test('asks the model for only the compact feed fields', () => {
+    const prompt = buildThreadversePrompt({
+      previousRanges: [],
+      recentRange: { label: 'ROUND 1', content: 'Story' },
+      fandomContinuity: [],
+      instructions: 'Discuss the story.',
+    })
+    const outputFormat = prompt.slice(prompt.indexOf('>>> OUTPUT FORMAT <<<'))
+
+    expect(outputFormat).toContain('"title"')
+    expect(outputFormat).toContain('"username"')
+    expect(outputFormat).toContain('"body"')
+    expect(outputFormat).toContain('"score"')
+    expect(outputFormat).toContain('"replies"')
+    expect(outputFormat).not.toContain('"subreddit"')
+    expect(outputFormat).not.toContain('"flair"')
+    expect(outputFormat).not.toContain('"timestamp"')
+    expect(outputFormat).not.toContain('"id"')
+  })
+
   test('parses fenced JSON and common author/content aliases', () => {
     const feed = parseThreadverseFeed(`Here is the result:\n\`\`\`json
-      {"subreddit":"television","title":"Episode discussion","post":{"author":"OP","content":"Opening","upvotes":12},"comments":[{"author":"viewer","text":"Theory","replies":[]}]}
+      {"subreddit":"legacy","title":"Episode discussion","post":{"author":"OP","content":"Opening","upvotes":12,"flair":"Old"},"comments":[{"id":"old-id","author":"viewer","text":"Theory","timestamp":"1h","replies":[]}]}
     \`\`\``)
     expect(feed.post.username).toBe('OP')
     expect(feed.post.score).toBe(12)
     expect(feed.comments[0].username).toBe('viewer')
-    expect(feed.comments[0].id).toBe('comment-1')
+    expect(feed).not.toHaveProperty('subreddit')
+    expect(feed.post).not.toHaveProperty('flair')
+    expect(feed.comments[0]).not.toHaveProperty('id')
+  })
+
+  test('parses and serializes the compact feed shape without empty replies', () => {
+    const feed = parseThreadverseFeed(JSON.stringify({
+      title: 'Discussion',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        { username: 'root', body: 'Root', score: 5 },
+        { username: 'parent', body: 'Parent', score: 4, replies: [
+          { username: 'reply', body: 'Reply', score: 2 },
+        ] },
+      ],
+    }))
+    const serialized = serializeFeedForContinuity(feed)
+    expect(serialized).toBe('{"title":"Discussion","post":{"username":"OP","body":"Opening","score":10},"comments":[{"username":"root","body":"Root","score":5},{"username":"parent","body":"Parent","score":4,"replies":[{"username":"reply","body":"Reply","score":2}]}]}')
+    expect(serialized).not.toContain('replies":[]')
   })
 
   test('rejects a response without the required feed shape', () => {

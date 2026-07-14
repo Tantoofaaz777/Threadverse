@@ -36,11 +36,13 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
     '>>> OUTPUT FORMAT <<<',
     `You must respond with ONLY valid JSON in this exact format:
 {
-  "subreddit": "community name without r/",
   "title": "thread title",
-  "post": { "username": "name", "body": "text", "score": 0, "flair": null, "timestamp": null },
+  "post": { "username": "name", "body": "text", "score": 0 },
   "comments": [
-    { "id": "unique-id", "username": "name", "body": "text", "score": 0, "flair": null, "timestamp": null, "replies": [] }
+    { "username": "name", "body": "text", "score": 0 },
+    { "username": "name", "body": "text", "score": 0, "replies": [
+      { "username": "name", "body": "text", "score": 0 }
+    ] }
   ]
 }
 Return ONLY the JSON—no explanations, no notes, no commentary.`,

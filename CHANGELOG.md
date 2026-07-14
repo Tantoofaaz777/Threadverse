@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5
+
+- Simplify generated feed JSON to title, username, body, score, and non-empty replies.
+- Remove the redundant subreddit/round header and legacy flair/timestamp rendering.
+- Minify fandom continuity while continuing to accept legacy feed fields.
+
 ## 1.0.4
 
 - Replace the Generating and Regenerating pulse with a three-dot wave animation.
