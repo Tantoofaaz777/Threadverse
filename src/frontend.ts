@@ -20,6 +20,7 @@ import {
 } from './shared'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
+import { serializeFeedAsPlainText } from './feed'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -183,6 +184,14 @@ const STYLES = `
   .threadverse-button { padding: 8px 11px; cursor: pointer; }
   .threadverse-button:hover { border-color: var(--lumiverse-accent); }
   .threadverse-button:disabled { cursor: not-allowed; opacity: .5; }
+
+  .threadverse-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--lumiverse-btn-icon-sm, 32px);
+    padding: 7px;
+  }
 
   .threadverse-button--compact { padding: 5px 8px; font-size: 9px; }
 
@@ -366,6 +375,7 @@ const STYLES = `
 
   .threadverse-feed-stack { display: grid; gap: 10px; }
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+  .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto auto; }
   .threadverse-feed-round-select { min-width: 0; }
   .threadverse-reddit { overflow: hidden; padding: 0; }
   .threadverse-reddit-post { padding: 12px; border-bottom: 1px solid var(--lumiverse-border); }
@@ -408,6 +418,9 @@ const STYLES = `
   @media (max-width: 420px) {
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
+    .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+    .threadverse-feed-controls .threadverse-feed-round-select { grid-column: 1 / -1; }
+    .threadverse-feed-controls .threadverse-icon-button { width: var(--lumiverse-btn-icon-sm, 32px); }
     .threadverse-comment--root { padding: 11px 9px; }
     .threadverse-comment { padding-left: 8px; }
     .threadverse-comment--root { padding-left: 9px; }
@@ -1186,7 +1199,7 @@ export function setup(ctx: SpindleFrontendContext) {
     return row
   }
 
-  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more'
+  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more' | 'copy'
 
   const ACTION_ICON_PATHS: Record<ActionIcon, string[]> = {
     upvote: ['M12 3 4.5 10.5h4.25V21h6.5V10.5h4.25L12 3Z'],
@@ -1195,6 +1208,7 @@ export function setup(ctx: SpindleFrontendContext) {
     reply: ['M9 7 4 12l5 5v-3h4c3.5 0 5.5 1.2 7 4-.4-5-2.7-8-7-8H9V7Z'],
     share: ['M15 8l5-5m0 0h-5m5 0v5', 'M11 5H7a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-4'],
     more: ['M12 6.5h.01', 'M12 12h.01', 'M12 17.5h.01'],
+    copy: ['M8 8h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8Z', 'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3'],
   }
 
   function actionIcon(icon: ActionIcon): SVGSVGElement {
@@ -1272,6 +1286,43 @@ export function setup(ctx: SpindleFrontendContext) {
     return comments.reduce((total, comment) => total + 1 + totalComments(comment.replies), 0)
   }
 
+  async function copyTextToClipboard(text: string): Promise<void> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        return
+      }
+    } catch {
+      // Some mobile WebViews expose the Clipboard API but reject writes.
+    }
+
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+    try {
+      if (!document.execCommand('copy')) throw new Error('The browser refused the copy command.')
+    } finally {
+      textarea.remove()
+    }
+  }
+
+  async function copyRound(roundId: string): Promise<void> {
+    const feed = feeds.find((round) => round.id === roundId)?.feed
+    if (!feed) return
+    try {
+      await copyTextToClipboard(serializeFeedAsPlainText(feed))
+      send({ type: 'threadverse:copy_result', success: true })
+    } catch {
+      send({ type: 'threadverse:copy_result', success: false })
+    }
+  }
+
   function renderFeed(): void {
     feedRoundHandle?.destroy()
     feedRoundHandle = null
@@ -1289,7 +1340,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     const round = feeds.find((item) => item.id === selectedFeedRoundId)!
     const toolbar = document.createElement('div')
-    toolbar.className = 'threadverse-feed-toolbar'
+    toolbar.className = 'threadverse-feed-toolbar threadverse-feed-controls'
     const selectTarget = document.createElement('div')
     selectTarget.className = 'threadverse-feed-round-select'
     const regenerateButton = document.createElement('button')
@@ -1308,6 +1359,15 @@ export function setup(ctx: SpindleFrontendContext) {
     } else {
       regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
     }
+    const copyButton = document.createElement('button')
+    copyButton.type = 'button'
+    copyButton.className = 'threadverse-button threadverse-icon-button'
+    copyButton.dataset.action = 'copy-round'
+    copyButton.dataset.roundId = round.id
+    copyButton.disabled = !round.feed
+    copyButton.title = 'Copy thread'
+    copyButton.setAttribute('aria-label', 'Copy thread')
+    copyButton.appendChild(actionIcon('copy'))
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
     deleteButton.className = 'threadverse-button threadverse-button--danger'
@@ -1315,7 +1375,7 @@ export function setup(ctx: SpindleFrontendContext) {
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending || operationPending
     deleteButton.textContent = 'Delete'
-    toolbar.append(selectTarget, regenerateButton, deleteButton)
+    toolbar.append(selectTarget, regenerateButton, copyButton, deleteButton)
     feedList.appendChild(toolbar)
     feedRoundHandle = ctx.components.mountSelect(selectTarget, {
       value: round.id,
@@ -1563,6 +1623,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'save') generateSelectedRange()
     if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
     if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
+    if (action === 'copy-round') void copyRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'reset') resetContinuity()
     if (action === 'save-prompt') savePrompt()

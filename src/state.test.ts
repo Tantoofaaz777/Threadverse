@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { buildThreadversePrompt } from './prompt'
-import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
+import { parseThreadverseFeed, serializeFeedAsPlainText, serializeFeedForContinuity } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
-import { DEFAULT_FEED_FONT_SCALE } from './shared'
+import { DEFAULT_FEED_FONT_SCALE, isFrontendMessage } from './shared'
 import {
   DEFAULT_SETTINGS,
   applyAutomaticSettings,
@@ -19,6 +19,10 @@ describe('Threadverse continuity', () => {
     expect(shouldAcceptActiveChatResponse(4, 5)).toBe(false)
     expect(shouldAcceptActiveChatResponse(5, 5)).toBe(true)
     expect(shouldAcceptActiveChatResponse(undefined, 5)).toBe(true)
+  })
+
+  test('accepts clipboard feedback messages for completion toasts', () => {
+    expect(isFrontendMessage({ type: 'threadverse:copy_result', success: true })).toBe(true)
   })
 
   test('clicking either selected endpoint toggles only that endpoint off', () => {
@@ -291,6 +295,23 @@ describe('Threadverse continuity', () => {
     const serialized = serializeFeedForContinuity(feed)
     expect(serialized).toBe('{"title":"Discussion","post":{"username":"OP","body":"Opening","score":10},"comments":[{"username":"root","body":"Root","score":5},{"username":"parent","body":"Parent","score":4,"replies":[{"username":"reply","body":"Reply","score":2}]}]}')
     expect(serialized).not.toContain('replies":[]')
+  })
+
+  test('serializes a feed as clean text in reading order', () => {
+    const feed = parseThreadverseFeed(JSON.stringify({
+      title: 'Episode discussion',
+      post: { username: 'OP', body: 'Opening post', score: 10 },
+      comments: [
+        { username: 'root', body: 'Root comment', score: 5, replies: [
+          { username: 'reply', body: 'Nested reply', score: 2 },
+        ] },
+        { username: 'second', body: 'Second comment', score: 1 },
+      ],
+    }))
+
+    expect(serializeFeedAsPlainText(feed)).toBe(
+      'Episode discussion\n\nOP:\nOpening post\n\nroot:\nRoot comment\n\nreply:\nNested reply\n\nsecond:\nSecond comment',
+    )
   })
 
   test('rejects a response without the required feed shape', () => {

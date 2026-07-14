@@ -25,6 +25,7 @@ The extension currently includes:
 - tolerant validation of a compact JSON feed response, including legacy feed compatibility;
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
+- one-tap clean-text copying of the selected thread for TTS and other apps;
 - a mobile-safe Feed text-size slider with automatic persistence;
 - background completion toasts without automatic tab or drawer navigation;
 - a newest-first native round selector, lightweight CSS avatars, and nested replies;

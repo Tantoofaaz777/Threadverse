@@ -105,3 +105,20 @@ export function serializeFeedForContinuity(feed: ThreadverseFeed): string {
     comments: feed.comments.map(serializeComment),
   })
 }
+
+export function serializeFeedAsPlainText(feed: ThreadverseFeed): string {
+  const comments: string[] = []
+  const appendComments = (items: ThreadverseComment[]): void => {
+    for (const comment of items) {
+      comments.push(`${comment.username}:\n${comment.body}`)
+      appendComments(comment.replies)
+    }
+  }
+  appendComments(feed.comments)
+
+  return [
+    feed.title,
+    `${feed.post.username}:\n${feed.post.body}`,
+    ...comments,
+  ].join('\n\n')
+}

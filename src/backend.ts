@@ -426,6 +426,11 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     if (payload.type === 'threadverse:regenerate_thread') { await regenerateThread(payload.chatId, payload.roundId, userId); return }
     if (payload.type === 'threadverse:delete_round') { await deleteRound(payload.chatId, payload.roundId, userId); return }
     if (payload.type === 'threadverse:cancel_generation') { activeGenerations.get(userId)?.abort(); return }
+    if (payload.type === 'threadverse:copy_result') {
+      if (payload.success) spindle.toast.success('Thread copied to clipboard.', { userId })
+      else spindle.toast.error('Threadverse could not copy the thread.', { userId })
+      return
+    }
     await resetContinuity(payload.chatId, userId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Threadverse could not complete the operation.'

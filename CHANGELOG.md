@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+
+- Add a compact SVG button that copies the selected thread as clean text for TTS and other apps.
+- Preserve the thread title, authors, bodies, line breaks, and reply reading order without visual metadata.
+- Fall back to legacy clipboard copying when a mobile WebView rejects the modern Clipboard API.
+
 ## 1.0.5
 
 - Simplify generated feed JSON to title, username, body, score, and non-empty replies.
