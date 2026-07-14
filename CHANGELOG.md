@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Fix regeneration getting stuck before the backend reported that it had started.
+- Make cancellation available immediately, including during storage and connection preparation.
+- Recover the interface if the backend does not acknowledge a generation request within 15 seconds.
+
 ## 1.1.0
 
 - Preserve regenerations as navigable versions inside the same continuity round.

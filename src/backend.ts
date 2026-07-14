@@ -36,10 +36,60 @@ declare const spindle: import('lumiverse-spindle-types').SpindleAPI
 
 const STORE_PATH = 'threadverse-state.json'
 const storeWriteQueues = new Map<string, Promise<void>>()
-const activeGenerations = new Map<string, AbortController>()
+interface ActiveGeneration {
+  controller: AbortController
+  chatId: string
+  operation: 'generate' | 'regenerate'
+  roundId?: string
+}
+const activeGenerations = new Map<string, ActiveGeneration>()
 
 function send(payload: BackendToFrontendMessage, userId: string): void {
   spindle.sendToFrontend(payload, userId)
+}
+
+function beginGeneration(
+  userId: string,
+  chatId: string,
+  operation: 'generate' | 'regenerate',
+  roundId?: string,
+): ActiveGeneration {
+  if (activeGenerations.has(userId)) throw new Error('A Threadverse generation is already running.')
+  const active = { controller: new AbortController(), chatId, operation, roundId }
+  activeGenerations.set(userId, active)
+  try {
+    send({
+      type: 'threadverse:generation_state', status: 'started', chatId,
+      operation, roundId, outputTokens: 0,
+    }, userId)
+  } catch (error) {
+    activeGenerations.delete(userId)
+    active.controller.abort()
+    throw error
+  }
+  return active
+}
+
+function endGeneration(userId: string, active: ActiveGeneration): void {
+  if (activeGenerations.get(userId) === active) activeGenerations.delete(userId)
+}
+
+function throwIfAborted(active: ActiveGeneration): void {
+  if (!active.controller.signal.aborted) return
+  const error = new Error('Generation cancelled.')
+  error.name = 'AbortError'
+  throw error
+}
+
+function cancelActiveGeneration(userId: string): void {
+  const active = activeGenerations.get(userId)
+  if (!active) return
+  active.controller.abort()
+  activeGenerations.delete(userId)
+  send({
+    type: 'threadverse:generation_state', status: 'cancelled', chatId: active.chatId,
+    operation: active.operation, roundId: active.roundId,
+  }, userId)
 }
 
 async function loadStore(userId: string): Promise<ThreadverseStore> {
@@ -225,63 +275,58 @@ async function runGeneration(
   cutoff: number,
   userId: string,
   operation: 'generate' | 'regenerate',
+  active: ActiveGeneration,
   roundId?: string,
 ) {
-  if (activeGenerations.has(userId)) throw new Error('A Threadverse generation is already running.')
   const connections = await getConnections(userId)
+  throwIfAborted(active)
   const selectedConnection = connections.find((item) => item.id === store.settings.connectionId)
     ?? connections.find((item) => item.isDefault) ?? connections[0]
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
-  const controller = new AbortController()
-  activeGenerations.set(userId, controller)
-  send({ type: 'threadverse:generation_state', status: 'started', chatId, operation, roundId, outputTokens: 0 }, userId)
-  try {
-    const stream = spindle.generate.quietStream({
-      type: 'quiet', userId, connection_id: connectionId,
-      messages: [{ role: 'user', content: promptForRound(store, chatId, recent, cutoff) }],
-      parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
-      signal: controller.signal,
-    })
-    let content: string | null = null
-    let outputCharacters = 0
-    let outputTokens = 0
-    let lastReportedTokens = 0
-    let lastProgressAt = 0
+  const stream = spindle.generate.quietStream({
+    type: 'quiet', userId, connection_id: connectionId,
+    messages: [{ role: 'user', content: promptForRound(store, chatId, recent, cutoff) }],
+    parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
+    signal: active.controller.signal,
+  })
+  let content: string | null = null
+  let outputCharacters = 0
+  let outputTokens = 0
+  let lastReportedTokens = 0
+  let lastProgressAt = 0
 
-    const reportProgress = (force = false) => {
-      const now = Date.now()
-      if (!force && outputTokens > 1 && now - lastProgressAt < 250) return
-      if (outputTokens === lastReportedTokens) return
-      lastReportedTokens = outputTokens
-      lastProgressAt = now
-      try {
-        send({
-          type: 'threadverse:generation_state', status: 'progress', chatId,
-          operation, roundId, outputTokens,
-        }, userId)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown progress update error.'
-        spindle.log.warn(`[Threadverse] Could not update generation progress: ${message}`)
-      }
+  const reportProgress = (force = false) => {
+    const now = Date.now()
+    if (!force && outputTokens > 1 && now - lastProgressAt < 250) return
+    if (outputTokens === lastReportedTokens) return
+    lastReportedTokens = outputTokens
+    lastProgressAt = now
+    try {
+      send({
+        type: 'threadverse:generation_state', status: 'progress', chatId,
+        operation, roundId, outputTokens,
+      }, userId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown progress update error.'
+      spindle.log.warn(`[Threadverse] Could not update generation progress: ${message}`)
     }
-
-    for await (const chunk of stream) {
-      if (chunk.type === 'token' && chunk.token) {
-        outputCharacters += chunk.token.length
-        outputTokens = Math.ceil(outputCharacters / 4)
-        reportProgress()
-      } else if (chunk.type === 'done') {
-        content = chunk.content
-      }
-    }
-    reportProgress(true)
-    if (content === null) throw new Error('Lumiverse ended the generation without a final response.')
-    return parseThreadverseFeed(generationContent({ content }))
-  } finally {
-    if (activeGenerations.get(userId) === controller) activeGenerations.delete(userId)
   }
+
+  for await (const chunk of stream) {
+    if (chunk.type === 'token' && chunk.token) {
+      outputCharacters += chunk.token.length
+      outputTokens = Math.ceil(outputCharacters / 4)
+      reportProgress()
+    } else if (chunk.type === 'done') {
+      content = chunk.content
+    }
+  }
+  throwIfAborted(active)
+  reportProgress(true)
+  if (content === null) throw new Error('Lumiverse ended the generation without a final response.')
+  return parseThreadverseFeed(generationContent({ content }))
 }
 
 async function finishSuccessfulGeneration(
@@ -338,55 +383,74 @@ async function selectMessages(chatId: string, startId: string, endId: string, us
 }
 
 async function generateThread(payload: Extract<import('./shared').FrontendToBackendMessage, { type: 'threadverse:generate_thread' }>, userId: string): Promise<void> {
-  const selection = await selectMessages(payload.chatId, payload.startMessageId, payload.endMessageId, userId)
-  const store = await loadStore(userId)
-  const existing = store.chats[selection.chat.id]?.rounds ?? []
-  const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
-  if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
-  const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId, 'generate')
-  const feedVersion = createFeedVersion(feed)
-  const round: StoredRound = {
-    id: crypto.randomUUID(), sequence: existing.length + 1, createdAt: new Date().toISOString(),
-    startMessageId: selection.messages[0].id, endMessageId: selection.messages.at(-1)!.id,
-    startIndex: selection.messages[0].index, endIndex: selection.messages.at(-1)!.index,
-    messageCount: selection.messages.length, messages: selection.messages,
-    feedVersions: [feedVersion], activeFeedVersionId: feedVersion.id,
+  const active = beginGeneration(userId, payload.chatId, 'generate')
+  try {
+    const selection = await selectMessages(payload.chatId, payload.startMessageId, payload.endMessageId, userId)
+    throwIfAborted(active)
+    const store = await loadStore(userId)
+    throwIfAborted(active)
+    const existing = store.chats[selection.chat.id]?.rounds ?? []
+    const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
+    if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
+    const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId, 'generate', active)
+    throwIfAborted(active)
+    const feedVersion = createFeedVersion(feed)
+    const round: StoredRound = {
+      id: crypto.randomUUID(), sequence: existing.length + 1, createdAt: new Date().toISOString(),
+      startMessageId: selection.messages[0].id, endMessageId: selection.messages.at(-1)!.id,
+      startIndex: selection.messages[0].index, endIndex: selection.messages.at(-1)!.index,
+      messageCount: selection.messages.length, messages: selection.messages,
+      feedVersions: [feedVersion], activeFeedVersionId: feedVersion.id,
+    }
+    await queueStoreWrite(userId, async () => {
+      throwIfAborted(active)
+      const latest = await loadStore(userId)
+      throwIfAborted(active)
+      const continuity = latest.chats[selection.chat.id] ?? { chatId: selection.chat.id, chatName: selection.chat.name, rounds: [] }
+      const latestUsed = new Set(continuity.rounds.flatMap((item) => item.messages.map((message) => message.id)))
+      if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('This range was added to continuity while generation was running.')
+      round.sequence = continuity.rounds.length + 1
+      continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
+      pruneInactiveFeedVersions(continuity.rounds, latest.settings)
+      await saveStore(latest, userId)
+    })
+    await finishSuccessfulGeneration(
+      selection.chat.id,
+      round.id,
+      `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
+      userId,
+    )
+  } finally {
+    endGeneration(userId, active)
   }
-  await queueStoreWrite(userId, async () => {
-    const latest = await loadStore(userId)
-    const continuity = latest.chats[selection.chat.id] ?? { chatId: selection.chat.id, chatName: selection.chat.name, rounds: [] }
-    const latestUsed = new Set(continuity.rounds.flatMap((item) => item.messages.map((message) => message.id)))
-    if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('This range was added to continuity while generation was running.')
-    round.sequence = continuity.rounds.length + 1
-    continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
-    pruneInactiveFeedVersions(continuity.rounds, latest.settings)
-    await saveStore(latest, userId)
-  })
-  await finishSuccessfulGeneration(
-    selection.chat.id,
-    round.id,
-    `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
-    userId,
-  )
 }
 
 async function regenerateThread(chatId: string, roundId: string, userId: string): Promise<void> {
-  const store = await loadStore(userId)
-  const continuity = store.chats[chatId]
-  const index = continuity?.rounds.findIndex((round) => round.id === roundId) ?? -1
-  if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
-  const round = continuity.rounds[index]
-  const feed = await runGeneration(store, chatId, round.messages, index, userId, 'regenerate', roundId)
-  const feedVersion = createFeedVersion(feed)
-  await queueStoreWrite(userId, async () => {
-    const latest = await loadStore(userId)
-    const target = latest.chats[chatId]?.rounds.find((item) => item.id === roundId)
-    if (!target) throw new Error('That continuity round was removed while generation was running.')
-    target.feedVersions.push(feedVersion)
-    target.activeFeedVersionId = feedVersion.id
-    await saveStore(latest, userId)
-  })
-  await finishSuccessfulGeneration(chatId, roundId, `Round ${round.sequence} regenerated.`, userId)
+  const active = beginGeneration(userId, chatId, 'regenerate', roundId)
+  try {
+    const store = await loadStore(userId)
+    throwIfAborted(active)
+    const continuity = store.chats[chatId]
+    const index = continuity?.rounds.findIndex((round) => round.id === roundId) ?? -1
+    if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
+    const round = continuity.rounds[index]
+    const feed = await runGeneration(store, chatId, round.messages, index, userId, 'regenerate', active, roundId)
+    throwIfAborted(active)
+    const feedVersion = createFeedVersion(feed)
+    await queueStoreWrite(userId, async () => {
+      throwIfAborted(active)
+      const latest = await loadStore(userId)
+      throwIfAborted(active)
+      const target = latest.chats[chatId]?.rounds.find((item) => item.id === roundId)
+      if (!target) throw new Error('That continuity round was removed while generation was running.')
+      target.feedVersions.push(feedVersion)
+      target.activeFeedVersionId = feedVersion.id
+      await saveStore(latest, userId)
+    })
+    await finishSuccessfulGeneration(chatId, roundId, `Round ${round.sequence} regenerated.`, userId)
+  } finally {
+    endGeneration(userId, active)
+  }
 }
 
 async function selectRoundFeedVersion(
@@ -451,7 +515,7 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
 async function resetContinuity(chatId: string, userId: string): Promise<void> {
   const activeChat = await spindle.chats.getActive(userId)
   if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
-  activeGenerations.get(userId)?.abort()
+  cancelActiveGeneration(userId)
   await queueStoreWrite(userId, async () => { const store = await loadStore(userId); delete store.chats[chatId]; await saveStore(store, userId) })
   await finishSuccessfulMutation('reset_continuity', chatId, 'Continuity reset for this chat.', userId)
 }
@@ -483,7 +547,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     if (payload.type === 'threadverse:select_feed_version') { await selectRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
     if (payload.type === 'threadverse:delete_feed_version') { await deleteRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
     if (payload.type === 'threadverse:delete_round') { await deleteRound(payload.chatId, payload.roundId, userId); return }
-    if (payload.type === 'threadverse:cancel_generation') { activeGenerations.get(userId)?.abort(); return }
+    if (payload.type === 'threadverse:cancel_generation') { cancelActiveGeneration(userId); return }
     if (payload.type === 'threadverse:copy_result') {
       if (payload.success) spindle.toast.success('Thread copied to clipboard.', { userId })
       else spindle.toast.error('Threadverse could not copy the thread.', { userId })
@@ -507,10 +571,13 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     if (payload.type === 'threadverse:generate_thread' || payload.type === 'threadverse:regenerate_thread') {
       const cancelled = error instanceof Error && error.name === 'AbortError'
-      if (!cancelled) spindle.toast.error(message, { userId })
+      // cancelActiveGeneration already notified the frontend. Avoid a delayed
+      // duplicate cancellation clearing a newer generation for the same chat.
+      if (cancelled) return
+      spindle.toast.error(message, { userId })
       send({
         type: 'threadverse:generation_state',
-        status: cancelled ? 'cancelled' : 'error',
+        status: 'error',
         chatId: payload.chatId,
       }, userId); return
     }

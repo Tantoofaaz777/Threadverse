@@ -303,6 +303,14 @@ const STYLES = `
     align-items: baseline;
   }
 
+  .threadverse-generation-status-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
   .threadverse-message-list {
     display: flex;
     flex-direction: column;
@@ -619,9 +627,12 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
           <div class="threadverse-generation-progress" data-generation-progress role="status" aria-live="polite" hidden>
             <span aria-hidden="true"></span>
-            <span class="threadverse-generation-token-status">
-              <span data-generation-token-count>0 output tokens received</span>
-              <span data-generation-token-dots></span>
+            <span class="threadverse-generation-status-row">
+              <span class="threadverse-generation-token-status">
+                <span data-generation-token-count>0 output tokens received</span>
+                <span data-generation-token-dots></span>
+              </span>
+              <button class="threadverse-button threadverse-button--compact" type="button" data-action="cancel-generation" hidden>Cancel</button>
             </span>
           </div>
           <div class="threadverse-context-error" data-context-error hidden></div>
@@ -639,7 +650,6 @@ export function setup(ctx: SpindleFrontendContext) {
         </div>
         <div class="threadverse-actions">
           <button class="threadverse-button" type="button" data-action="clear">Clear</button>
-          <button class="threadverse-button" type="button" data-action="cancel-generation" hidden>Cancel</button>
           <button class="threadverse-button threadverse-button--primary" type="button" data-action="save" disabled>Generate Thread</button>
         </div>
       </div>
@@ -768,6 +778,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let generationStartTimer: ReturnType<typeof setTimeout> | null = null
   let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
@@ -877,6 +888,34 @@ export function setup(ctx: SpindleFrontendContext) {
       saveButton.removeAttribute('aria-label')
     }
     renderGenerationProgress()
+  }
+
+  function clearGenerationStartTimer(): void {
+    if (!generationStartTimer) return
+    clearTimeout(generationStartTimer)
+    generationStartTimer = null
+  }
+
+  function armGenerationStartTimer(): void {
+    clearGenerationStartTimer()
+    generationStartTimer = setTimeout(() => {
+      generationStartTimer = null
+      if (!generationPending) return
+      send({ type: 'threadverse:cancel_generation' })
+      setGenerationPending(false)
+      showError('Threadverse could not start the generation. Please try again.')
+      renderContinuity()
+      renderFeed()
+    }, 15_000)
+  }
+
+  function cancelGeneration(): void {
+    if (!generationPending) return
+    clearGenerationStartTimer()
+    send({ type: 'threadverse:cancel_generation' })
+    setGenerationPending(false)
+    renderContinuity()
+    renderFeed()
   }
 
   function showError(message: string): void {
@@ -1651,9 +1690,10 @@ export function setup(ctx: SpindleFrontendContext) {
     const bounds = selectedBounds()
     if (!bounds || !activeChat || operationPending || generationPending) return
 
-    setGenerationPending(true, false, {
+    setGenerationPending(true, true, {
       operation: 'generate', chatId: activeChat.id, outputTokens: 0,
     })
+    armGenerationStartTimer()
     clearError()
     renderContinuity()
     send({
@@ -1666,9 +1706,10 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function regenerate(roundId: string): void {
     if (!activeChat || generationPending || operationPending) return
-    setGenerationPending(true, false, {
+    setGenerationPending(true, true, {
       operation: 'regenerate', chatId: activeChat.id, roundId, outputTokens: 0,
     })
+    armGenerationStartTimer()
     renderFeed()
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
@@ -1793,7 +1834,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
     if (action === 'clear') clearSelection()
     if (action === 'save') generateSelectedRange()
-    if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
+    if (action === 'cancel-generation') cancelGeneration()
     if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'select-feed-version') {
       const control = target.closest<HTMLElement>('[data-round-id]')!
@@ -1826,6 +1867,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:generation_state') {
+      clearGenerationStartTimer()
       if (message.status === 'progress') {
         if (generationPending && generationChatId === message.chatId) {
           generationOutputTokens = message.outputTokens ?? generationOutputTokens
@@ -1954,6 +1996,7 @@ export function setup(ctx: SpindleFrontendContext) {
   return () => {
     if (autoSaveTimer) flushAutomaticSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
+    clearGenerationStartTimer()
     unsubscribeActivate()
     for (const unsubscribe of chatEventUnsubscribers) unsubscribe()
     unsubscribeBackend()

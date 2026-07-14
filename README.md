@@ -21,7 +21,7 @@ The extension currently includes:
 - a prompt builder for chronological story and fandom continuity;
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
-- cancellable streamed generation with live estimated output-token progress and atomic round persistence;
+- immediately cancellable streamed generation with live estimated output-token progress and atomic round persistence;
 - tolerant validation of a compact JSON feed response, including legacy feed compatibility;
 - feed regeneration that adds a new version without duplicating its continuity round;
 - swipe-style regeneration history with one active version per round and automatic legacy migration;
