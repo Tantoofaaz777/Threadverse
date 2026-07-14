@@ -25,6 +25,7 @@ The extension currently includes:
 - tolerant validation of the model's JSON feed response;
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
+- a mobile-safe Feed text-size slider with automatic persistence;
 - background completion toasts without automatic tab or drawer navigation;
 - a newest-first native round selector, lightweight CSS avatars, and nested replies;
 - per-round regeneration and deletion with native confirmation;

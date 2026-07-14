@@ -1,3 +1,7 @@
+export const DEFAULT_FEED_FONT_SCALE = 100
+export const MIN_FEED_FONT_SCALE = 100
+export const MAX_FEED_FONT_SCALE = 160
+
 export type ThreadverseTab = 'feed' | 'make' | 'settings'
 
 export interface ChatMessageSummary {
@@ -54,6 +58,7 @@ export interface ThreadverseSettingsPayload {
   previousRangeLimit: number | null
   fandomThreadLimit: number | null
   maintainFandomContinuity: boolean
+  feedFontScale: number
   instructionPresets: InstructionPreset[]
   activeInstructionPresetId: string
 }
@@ -66,6 +71,7 @@ export type ThreadverseAutomaticSettings = Pick<ThreadverseSettingsPayload,
   | 'previousRangeLimit'
   | 'fandomThreadLimit'
   | 'maintainFandomContinuity'
+  | 'feedFontScale'
 >
 
 export type ThreadversePromptSettings = Pick<ThreadverseSettingsPayload,

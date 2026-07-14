@@ -1,4 +1,7 @@
 import {
+  DEFAULT_FEED_FONT_SCALE,
+  MAX_FEED_FONT_SCALE,
+  MIN_FEED_FONT_SCALE,
   isFrontendMessage,
   type BackendToFrontendMessage,
   type ChatMessageSummary,
@@ -124,6 +127,10 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
     previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
     fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
     maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
+    feedFontScale: requireNumber(
+      input.feedFontScale ?? DEFAULT_FEED_FONT_SCALE,
+      'Feed text size', MIN_FEED_FONT_SCALE, MAX_FEED_FONT_SCALE, true,
+    ),
   }
   await queueStoreWrite(userId, async () => {
     const store = await loadStore(userId)

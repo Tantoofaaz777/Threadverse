@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- Add a persisted 100%-160% Feed text-size slider in Settings.
+- Use Lumiverse's native direction-aware slider so vertical mobile scrolling does not change the value.
+
 ## 1.0.1
 
 - Stream generation output so Threadverse can show estimated live output-token progress.

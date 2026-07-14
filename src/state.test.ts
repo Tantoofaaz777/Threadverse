@@ -3,6 +3,7 @@ import { buildThreadversePrompt } from './prompt'
 import { parseThreadverseFeed } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
+import { DEFAULT_FEED_FONT_SCALE } from './shared'
 import {
   DEFAULT_SETTINGS,
   applyAutomaticSettings,
@@ -45,6 +46,7 @@ describe('Threadverse continuity', () => {
     expect(store.settings.previousRangeLimit).toBe(8)
     expect(store.settings.temperature).toBe(0.75)
     expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
+    expect(store.settings.feedFontScale).toBe(DEFAULT_FEED_FONT_SCALE)
     expect(store.settings.instructionPresets).toEqual(DEFAULT_SETTINGS.instructionPresets)
   })
 
@@ -57,6 +59,7 @@ describe('Threadverse continuity', () => {
         topP: -1,
         previousRangeLimit: 2.5,
         maintainFandomContinuity: 'yes',
+        feedFontScale: 999,
       },
       chats: {
         good: {
@@ -79,6 +82,7 @@ describe('Threadverse continuity', () => {
     expect(store.settings.topP).toBeNull()
     expect(store.settings.previousRangeLimit).toBeNull()
     expect(store.settings.maintainFandomContinuity).toBe(true)
+    expect(store.settings.feedFontScale).toBe(DEFAULT_FEED_FONT_SCALE)
     expect(Object.keys(store.chats)).toEqual(['good'])
     expect(store.chats.good.rounds).toHaveLength(1)
     expect(store.chats.good.rounds[0]).toMatchObject({
@@ -125,6 +129,7 @@ describe('Threadverse continuity', () => {
       settings: {
         connectionId: 'connection-1',
         temperature: 0.65,
+        feedFontScale: 135,
         maintainFandomContinuity: false,
         instructionPresets: [{ id: 'custom', name: 'Custom', instructions: 'Keep this prompt' }],
         activeInstructionPresetId: 'custom',
@@ -135,6 +140,7 @@ describe('Threadverse continuity', () => {
     expect(store.chats).toEqual({})
     expect(store.settings.connectionId).toBe('connection-1')
     expect(store.settings.temperature).toBe(0.65)
+    expect(store.settings.feedFontScale).toBe(135)
     expect(store.settings.maintainFandomContinuity).toBe(false)
     expect(store.settings.instructionPresets[0].instructions).toBe('Keep this prompt')
     expect(store.settings.activeInstructionPresetId).toBe('custom')
@@ -186,9 +192,11 @@ describe('Threadverse continuity', () => {
       previousRangeLimit: 5,
       fandomThreadLimit: 4,
       maintainFandomContinuity: false,
+      feedFontScale: 125,
     })
     expect(next.instructionPresets[0].instructions).toBe('Prompt draft')
     expect(next.temperature).toBe(0.8)
+    expect(next.feedFontScale).toBe(125)
   })
 
   test('prompt saves never overwrite automatic settings', () => {

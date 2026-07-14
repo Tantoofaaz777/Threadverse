@@ -4,16 +4,19 @@ import type {
   SpindleSelectHandle,
   SpindleTextAreaHandle,
 } from 'lumiverse-spindle-types'
-import type {
-  BackendToFrontendMessage,
-  ChatMessageSummary,
-  ConnectionSummary,
-  FeedRound,
-  FrontendToBackendMessage,
-  RoundSummary,
-  ThreadverseComment,
-  ThreadverseSettingsPayload,
-  ThreadverseTab,
+import {
+  DEFAULT_FEED_FONT_SCALE,
+  MAX_FEED_FONT_SCALE,
+  MIN_FEED_FONT_SCALE,
+  type BackendToFrontendMessage,
+  type ChatMessageSummary,
+  type ConnectionSummary,
+  type FeedRound,
+  type FrontendToBackendMessage,
+  type RoundSummary,
+  type ThreadverseComment,
+  type ThreadverseSettingsPayload,
+  type ThreadverseTab,
 } from './shared'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
@@ -373,32 +376,32 @@ const STYLES = `
   .threadverse-reddit { overflow: hidden; padding: 0; }
   .threadverse-reddit-community {
     padding: 10px 12px; border-bottom: 1px solid var(--lumiverse-border);
-    color: var(--lumiverse-text-muted); font-size: 10px; font-weight: 700;
+    color: var(--lumiverse-text-muted); font-size: calc(10px * var(--threadverse-feed-font-scale, 1)); font-weight: 700;
   }
   .threadverse-reddit-post { padding: 12px; border-bottom: 1px solid var(--lumiverse-border); }
-  .threadverse-reddit-title { margin: 5px 0 9px; color: var(--lumiverse-text); font-size: 16px; line-height: 1.3; }
+  .threadverse-reddit-title { margin: 5px 0 9px; color: var(--lumiverse-text); font-size: calc(16px * var(--threadverse-feed-font-scale, 1)); line-height: 1.3; }
   .threadverse-reddit-body, .threadverse-comment-body {
-    margin: 0; color: var(--lumiverse-text); font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
+    margin: 0; color: var(--lumiverse-text); font-size: calc(11px * var(--threadverse-feed-font-scale, 1)); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .threadverse-author-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
   .threadverse-avatar {
     display: grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px;
     border-radius: 50%; background: hsl(var(--avatar-hue) 52% 38%); color: white;
-    font-size: 9px; font-weight: 800; text-transform: uppercase;
+    font-size: calc(9px * var(--threadverse-feed-font-scale, 1)); font-weight: 800; text-transform: uppercase;
   }
-  .threadverse-author { overflow: hidden; color: var(--lumiverse-text); font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+  .threadverse-author { overflow: hidden; color: var(--lumiverse-text); font-size: calc(10px * var(--threadverse-feed-font-scale, 1)); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
   .threadverse-flair {
     overflow: hidden; max-width: 120px; padding: 2px 5px; border-radius: calc(var(--lumiverse-radius) / 2);
     background: var(--lumiverse-primary-020, rgba(147, 112, 219, .2)); color: var(--lumiverse-primary, var(--lumiverse-text));
-    font-size: 8px; text-overflow: ellipsis; white-space: nowrap;
+    font-size: calc(8px * var(--threadverse-feed-font-scale, 1)); text-overflow: ellipsis; white-space: nowrap;
   }
-  .threadverse-time { color: var(--lumiverse-text-muted); font-size: 8px; white-space: nowrap; }
+  .threadverse-time { color: var(--lumiverse-text-muted); font-size: calc(8px * var(--threadverse-feed-font-scale, 1)); white-space: nowrap; }
   .threadverse-reddit-post .threadverse-reddit-body { margin-top: 10px; }
   .threadverse-reddit-actions { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: var(--lumiverse-text-muted); }
   .threadverse-action-button {
     display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 26px; min-height: 26px;
     padding: 3px 6px; border: 0; border-radius: 999px; background: transparent;
-    color: var(--lumiverse-text-muted); cursor: default; font: inherit; font-size: 9px;
+    color: var(--lumiverse-text-muted); cursor: default; font: inherit; font-size: calc(9px * var(--threadverse-feed-font-scale, 1));
   }
   .threadverse-action-icon { display: block; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .threadverse-vote-group {
@@ -406,7 +409,7 @@ const STYLES = `
     border-radius: 999px; background: var(--lumiverse-fill-subtle);
   }
   .threadverse-vote-group .threadverse-action-button { border-radius: 0; padding: 3px 7px; }
-  .threadverse-score { color: var(--lumiverse-text); font-size: 9px; font-weight: 700; }
+  .threadverse-score { color: var(--lumiverse-text); font-size: calc(9px * var(--threadverse-feed-font-scale, 1)); font-weight: 700; }
   .threadverse-comments { padding: 0; }
   .threadverse-comment {
     position: relative; padding: 10px 0 0 12px; border-left: 2px solid var(--lumiverse-border);
@@ -651,6 +654,11 @@ export function setup(ctx: SpindleFrontendContext) {
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Feed</h3>
+          <div data-setting="feed-font-scale"></div>
+        </section>
+
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Instructions</h3>
           <div class="threadverse-preset-row">
             <div data-setting="instruction-preset"></div>
@@ -819,6 +827,10 @@ export function setup(ctx: SpindleFrontendContext) {
     ) ?? null
   }
 
+  function applyFeedFontScale(value: number): void {
+    feedList.style.setProperty('--threadverse-feed-font-scale', String(value / 100))
+  }
+
   function mountSettingsForm(
     settings: ThreadverseSettingsPayload,
     connections: ConnectionSummary[],
@@ -935,6 +947,26 @@ export function setup(ctx: SpindleFrontendContext) {
 
     maintainFandomToggle.checked = settingsDraft.maintainFandomContinuity
 
+    applyFeedFontScale(settingsDraft.feedFontScale)
+    const feedFontScaleHandle = ctx.components.mountRangeSlider(settingTarget('feed-font-scale'), {
+      label: 'Text size',
+      min: MIN_FEED_FONT_SCALE,
+      max: MAX_FEED_FONT_SCALE,
+      value: settingsDraft.feedFontScale,
+      step: 5,
+      integer: true,
+      format: { suffix: '%' },
+      onDragValue: (value) => {
+        applyFeedFontScale(value ?? settingsDraft?.feedFontScale ?? DEFAULT_FEED_FONT_SCALE)
+      },
+      onCommit: (value) => {
+        if (!settingsDraft) return
+        settingsDraft.feedFontScale = value
+        applyFeedFontScale(value)
+        scheduleAutomaticSave()
+      },
+    })
+
     const activePreset = getActiveInstructionPreset() ?? settingsDraft.instructionPresets[0]
     settingsDraft.activeInstructionPresetId = activePreset.id
     instructionPresetHandle = ctx.components.mountSelect(settingTarget('instruction-preset'), {
@@ -973,6 +1005,7 @@ export function setup(ctx: SpindleFrontendContext) {
       topPHandle,
       previousRangesHandle,
       fandomThreadsHandle,
+      feedFontScaleHandle,
       instructionPresetHandle,
       instructionsHandle,
     ]
@@ -994,6 +1027,7 @@ export function setup(ctx: SpindleFrontendContext) {
         previousRangeLimit: settingsDraft.previousRangeLimit,
         fandomThreadLimit: settingsDraft.fandomThreadLimit,
         maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
+        feedFontScale: settingsDraft.feedFontScale,
       },
     })
   }

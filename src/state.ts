@@ -1,11 +1,14 @@
-import type {
-  ChatMessageSummary,
-  InstructionPreset,
-  RoundSummary,
-  ThreadverseAutomaticSettings,
-  ThreadversePromptSettings,
-  ThreadverseSettingsPayload,
-  ThreadverseFeed,
+import {
+  DEFAULT_FEED_FONT_SCALE,
+  MAX_FEED_FONT_SCALE,
+  MIN_FEED_FONT_SCALE,
+  type ChatMessageSummary,
+  type InstructionPreset,
+  type RoundSummary,
+  type ThreadverseAutomaticSettings,
+  type ThreadversePromptSettings,
+  type ThreadverseSettingsPayload,
+  type ThreadverseFeed,
 } from './shared'
 import { parseThreadverseFeed } from './feed'
 
@@ -36,6 +39,7 @@ export const DEFAULT_SETTINGS: ThreadverseSettings = {
   previousRangeLimit: null,
   fandomThreadLimit: null,
   maintainFandomContinuity: true,
+  feedFontScale: DEFAULT_FEED_FONT_SCALE,
   instructionPresets: [{
     id: 'default',
     name: 'Default',
@@ -260,6 +264,12 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     maintainFandomContinuity: typeof savedWithoutLegacyFields.maintainFandomContinuity === 'boolean'
       ? savedWithoutLegacyFields.maintainFandomContinuity
       : DEFAULT_SETTINGS.maintainFandomContinuity,
+    feedFontScale: storedOptionalNumber(
+      savedWithoutLegacyFields.feedFontScale,
+      MIN_FEED_FONT_SCALE,
+      MAX_FEED_FONT_SCALE,
+      true,
+    ) ?? DEFAULT_FEED_FONT_SCALE,
     instructionPresets,
     activeInstructionPresetId,
   }
