@@ -21,7 +21,7 @@ The extension currently includes:
 - a prompt builder for chronological story and fandom continuity;
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
-- cancellable generation with atomic round persistence;
+- cancellable streamed generation with live estimated output-token progress and atomic round persistence;
 - tolerant validation of the model's JSON feed response;
 - feed regeneration that replaces the existing result without duplicating its round;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;

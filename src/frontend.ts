@@ -138,6 +138,18 @@ const STYLES = `
 
   .threadverse-context-value.is-recent { color: var(--lumiverse-success, #22c55e); }
 
+  .threadverse-generation-progress {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 8px;
+    color: var(--lumiverse-primary, var(--lumiverse-accent));
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+
+  .threadverse-generation-progress[hidden] { display: none; }
+
   .threadverse-context-error {
     color: var(--lumiverse-danger, #ef4444);
     font-size: 10px;
@@ -238,6 +250,43 @@ const STYLES = `
     border-color: var(--lumiverse-danger, #ef4444);
     background: transparent;
     color: var(--lumiverse-danger, #ef4444);
+  }
+
+  .threadverse-generating-label {
+    display: inline-flex;
+    align-items: baseline;
+    color: var(--lumiverse-primary, var(--lumiverse-accent));
+    animation: threadverse-generation-pulse 1.8s ease-in-out infinite;
+  }
+
+  .threadverse-button.is-generating:disabled { opacity: 1; }
+
+  .threadverse-generating-dots {
+    display: inline-flex;
+    min-width: 1.35em;
+  }
+
+  .threadverse-generating-dot {
+    opacity: .2;
+    animation: threadverse-generation-dot 1.2s ease-in-out infinite;
+  }
+
+  .threadverse-generating-dot:nth-child(2) { animation-delay: .2s; }
+  .threadverse-generating-dot:nth-child(3) { animation-delay: .4s; }
+
+  @keyframes threadverse-generation-pulse {
+    0%, 100% { opacity: .62; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes threadverse-generation-dot {
+    0%, 20%, 100% { opacity: .2; }
+    50% { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .threadverse-generating-label,
+    .threadverse-generating-dot { animation: none; opacity: 1; }
   }
 
   .threadverse-message-list {
@@ -527,6 +576,10 @@ export function setup(ctx: SpindleFrontendContext) {
             <span class="threadverse-context-label">Recent context</span>
             <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
           </div>
+          <div class="threadverse-generation-progress" data-generation-progress role="status" aria-live="polite" hidden>
+            <span aria-hidden="true"></span>
+            <span data-generation-token-count>0 output tokens received</span>
+          </div>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
         <div class="threadverse-toolbar">
@@ -638,6 +691,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
+  const generationProgress = shell.querySelector<HTMLElement>('[data-generation-progress]')!
+  const generationTokenCount = shell.querySelector<HTMLElement>('[data-generation-token-count]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
@@ -655,6 +710,10 @@ export function setup(ctx: SpindleFrontendContext) {
   let operationPending = false
   let generationPending = false
   let generationCancellable = false
+  let generationOperation: 'generate' | 'regenerate' | null = null
+  let generationChatId: string | null = null
+  let generationRoundId: string | null = null
+  let generationOutputTokens = 0
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -674,13 +733,67 @@ export function setup(ctx: SpindleFrontendContext) {
     contextError.hidden = true
   }
 
-  function setGenerationPending(pending: boolean, cancellable = false): void {
+  function setAnimatedButtonLabel(button: HTMLButtonElement, label: string): void {
+    button.classList.add('is-generating')
+    const animated = document.createElement('span')
+    animated.className = 'threadverse-generating-label'
+    animated.append(document.createTextNode(label))
+    const dots = document.createElement('span')
+    dots.className = 'threadverse-generating-dots'
+    dots.setAttribute('aria-hidden', 'true')
+    for (let index = 0; index < 3; index += 1) {
+      const dot = document.createElement('span')
+      dot.className = 'threadverse-generating-dot'
+      dot.textContent = '.'
+      dots.appendChild(dot)
+    }
+    animated.appendChild(dots)
+    button.replaceChildren(animated)
+    button.setAttribute('aria-label', `${label}...`)
+  }
+
+  function renderGenerationProgress(): void {
+    const visible = generationPending && activeChat?.id === generationChatId
+    generationProgress.hidden = !visible
+    if (visible) {
+      generationTokenCount.textContent = generationOutputTokens === 0
+        ? '0 output tokens received'
+        : `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'} received`
+    }
+  }
+
+  function setGenerationPending(
+    pending: boolean,
+    cancellable = false,
+    details?: {
+      operation?: 'generate' | 'regenerate'
+      chatId?: string
+      roundId?: string
+      outputTokens?: number
+    },
+  ): void {
     generationPending = pending
     generationCancellable = pending && cancellable
+    if (pending) {
+      generationOperation = details?.operation ?? generationOperation
+      generationChatId = details?.chatId ?? generationChatId
+      generationRoundId = details?.roundId ?? generationRoundId
+      generationOutputTokens = details?.outputTokens ?? generationOutputTokens
+    } else {
+      generationOperation = null
+      generationChatId = null
+      generationRoundId = null
+      generationOutputTokens = 0
+    }
     cancelButton.hidden = !generationCancellable
-    saveButton.textContent = pending
-      ? generationCancellable ? 'Generating...' : 'Starting...'
-      : 'Generate Thread'
+    if (pending && generationOperation === 'generate') {
+      setAnimatedButtonLabel(saveButton, 'Generating')
+    } else {
+      saveButton.classList.remove('is-generating')
+      saveButton.textContent = 'Generate Thread'
+      saveButton.removeAttribute('aria-label')
+    }
+    renderGenerationProgress()
   }
 
   function showError(message: string): void {
@@ -1141,7 +1254,16 @@ export function setup(ctx: SpindleFrontendContext) {
     regenerateButton.dataset.action = 'regenerate'
     regenerateButton.dataset.roundId = round.id
     regenerateButton.disabled = generationPending || operationPending
-    regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
+    if (
+      generationPending
+      && generationOperation === 'regenerate'
+      && generationChatId === activeChat?.id
+      && generationRoundId === round.id
+    ) {
+      setAnimatedButtonLabel(regenerateButton, 'Regenerating')
+    } else {
+      regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
+    }
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
     deleteButton.className = 'threadverse-button threadverse-button--danger'
@@ -1335,7 +1457,9 @@ export function setup(ctx: SpindleFrontendContext) {
     const bounds = selectedBounds()
     if (!bounds || !activeChat || operationPending || generationPending) return
 
-    setGenerationPending(true)
+    setGenerationPending(true, false, {
+      operation: 'generate', chatId: activeChat.id, outputTokens: 0,
+    })
     clearError()
     renderContinuity()
     send({
@@ -1348,7 +1472,9 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function regenerate(roundId: string): void {
     if (!activeChat || generationPending || operationPending) return
-    setGenerationPending(true)
+    setGenerationPending(true, false, {
+      operation: 'regenerate', chatId: activeChat.id, roundId, outputTokens: 0,
+    })
     renderFeed()
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
@@ -1422,7 +1548,19 @@ export function setup(ctx: SpindleFrontendContext) {
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
     if (message.type === 'threadverse:generation_state') {
-      setGenerationPending(message.status === 'started', message.status === 'started')
+      if (message.status === 'progress') {
+        if (generationPending && generationChatId === message.chatId) {
+          generationOutputTokens = message.outputTokens ?? generationOutputTokens
+          renderGenerationProgress()
+        }
+        return
+      }
+      setGenerationPending(message.status === 'started', message.status === 'started', {
+        operation: message.operation,
+        chatId: message.chatId,
+        roundId: message.roundId,
+        outputTokens: message.outputTokens,
+      })
       if (message.status === 'completed' && activeChat?.id === message.chatId) {
         if (message.roundId) selectedFeedRoundId = message.roundId
       }

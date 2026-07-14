@@ -201,7 +201,15 @@ function promptForRound(store: ThreadverseStore, chatId: string, recent: ChatMes
   })
 }
 
-async function runGeneration(store: ThreadverseStore, chatId: string, recent: ChatMessageSummary[], cutoff: number, userId: string) {
+async function runGeneration(
+  store: ThreadverseStore,
+  chatId: string,
+  recent: ChatMessageSummary[],
+  cutoff: number,
+  userId: string,
+  operation: 'generate' | 'regenerate',
+  roundId?: string,
+) {
   if (activeGenerations.has(userId)) throw new Error('A Threadverse generation is already running.')
   const connections = await getConnections(userId)
   const selectedConnection = connections.find((item) => item.id === store.settings.connectionId)
@@ -211,15 +219,49 @@ async function runGeneration(store: ThreadverseStore, chatId: string, recent: Ch
   const samplers = resolveSamplers(store.settings)
   const controller = new AbortController()
   activeGenerations.set(userId, controller)
-  send({ type: 'threadverse:generation_state', status: 'started', chatId }, userId)
+  send({ type: 'threadverse:generation_state', status: 'started', chatId, operation, roundId, outputTokens: 0 }, userId)
   try {
-    const result = await spindle.generate.quiet({
+    const stream = spindle.generate.quietStream({
       type: 'quiet', userId, connection_id: connectionId,
       messages: [{ role: 'user', content: promptForRound(store, chatId, recent, cutoff) }],
       parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
       signal: controller.signal,
     })
-    return parseThreadverseFeed(generationContent(result))
+    let content: string | null = null
+    let outputCharacters = 0
+    let outputTokens = 0
+    let lastReportedTokens = 0
+    let lastProgressAt = 0
+
+    const reportProgress = (force = false) => {
+      const now = Date.now()
+      if (!force && outputTokens > 1 && now - lastProgressAt < 250) return
+      if (outputTokens === lastReportedTokens) return
+      lastReportedTokens = outputTokens
+      lastProgressAt = now
+      try {
+        send({
+          type: 'threadverse:generation_state', status: 'progress', chatId,
+          operation, roundId, outputTokens,
+        }, userId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown progress update error.'
+        spindle.log.warn(`[Threadverse] Could not update generation progress: ${message}`)
+      }
+    }
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'token' && chunk.token) {
+        outputCharacters += chunk.token.length
+        outputTokens = Math.ceil(outputCharacters / 4)
+        reportProgress()
+      } else if (chunk.type === 'done') {
+        content = chunk.content
+      }
+    }
+    reportProgress(true)
+    if (content === null) throw new Error('Lumiverse ended the generation without a final response.')
+    return parseThreadverseFeed(generationContent({ content }))
   } finally {
     if (activeGenerations.get(userId) === controller) activeGenerations.delete(userId)
   }
@@ -280,7 +322,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
   const existing = store.chats[selection.chat.id]?.rounds ?? []
   const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
   if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
-  const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId)
+  const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId, 'generate')
   const round: StoredRound = {
     id: crypto.randomUUID(), sequence: existing.length + 1, createdAt: new Date().toISOString(),
     startMessageId: selection.messages[0].id, endMessageId: selection.messages.at(-1)!.id,
@@ -310,7 +352,7 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
   const index = continuity?.rounds.findIndex((round) => round.id === roundId) ?? -1
   if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
   const round = continuity.rounds[index]
-  const feed = await runGeneration(store, chatId, round.messages, index, userId)
+  const feed = await runGeneration(store, chatId, round.messages, index, userId, 'regenerate', roundId)
   await queueStoreWrite(userId, async () => {
     const latest = await loadStore(userId)
     const target = latest.chats[chatId]?.rounds.find((item) => item.id === roundId)

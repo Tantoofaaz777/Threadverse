@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Stream generation output so Threadverse can show estimated live output-token progress.
+- Animate the Generate and Regenerate labels with a subtle theme-aware pulse.
+- Keep partial streamed JSON transient and validate only the final response.
+
 ## 1.0.0
 
 - Select roleplay message ranges and generate fictional Reddit-style discussions.

@@ -124,9 +124,11 @@ export type BackendToFrontendMessage =
     }
   | {
       type: 'threadverse:generation_state'
-      status: 'started' | 'completed' | 'cancelled' | 'error'
+      status: 'started' | 'progress' | 'completed' | 'cancelled' | 'error'
       chatId: string
+      operation?: 'generate' | 'regenerate'
       roundId?: string
+      outputTokens?: number
       error?: string
     }
   | {
