@@ -259,37 +259,24 @@ const STYLES = `
     display: inline-flex;
     align-items: baseline;
     color: var(--lumiverse-primary, var(--lumiverse-accent));
-    animation: threadverse-generation-pulse 1.8s ease-in-out infinite;
+    opacity: .62;
   }
 
   .threadverse-button.is-generating:disabled { opacity: 1; }
 
   .threadverse-generating-dots {
-    display: inline-flex;
+    display: inline-block;
     min-width: 1.35em;
+    width: 1.35em;
+    white-space: nowrap;
   }
 
-  .threadverse-generating-dot {
-    opacity: .2;
-    animation: threadverse-generation-dot 1.2s ease-in-out infinite;
-  }
-
-  .threadverse-generating-dot:nth-child(2) { animation-delay: .2s; }
-  .threadverse-generating-dot:nth-child(3) { animation-delay: .4s; }
-
-  @keyframes threadverse-generation-pulse {
-    0%, 100% { opacity: .62; }
-    50% { opacity: 1; }
-  }
-
-  @keyframes threadverse-generation-dot {
-    0%, 20%, 100% { opacity: .2; }
-    50% { opacity: 1; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .threadverse-generating-label,
-    .threadverse-generating-dot { animation: none; opacity: 1; }
+  .threadverse-generating-dots-fill {
+    display: inline-block;
+    overflow: hidden;
+    width: 0;
+    vertical-align: bottom;
+    white-space: nowrap;
   }
 
   .threadverse-message-list {
@@ -749,15 +736,21 @@ export function setup(ctx: SpindleFrontendContext) {
     const dots = document.createElement('span')
     dots.className = 'threadverse-generating-dots'
     dots.setAttribute('aria-hidden', 'true')
-    for (let index = 0; index < 3; index += 1) {
-      const dot = document.createElement('span')
-      dot.className = 'threadverse-generating-dot'
-      dot.textContent = '.'
-      dots.appendChild(dot)
-    }
+    const dotsFill = document.createElement('span')
+    dotsFill.className = 'threadverse-generating-dots-fill'
+    dotsFill.textContent = '...'
+    dots.appendChild(dotsFill)
     animated.appendChild(dots)
     button.replaceChildren(animated)
     button.setAttribute('aria-label', `${label}...`)
+    animated.animate(
+      [{ opacity: .62 }, { opacity: 1 }, { opacity: .62 }],
+      { duration: 1800, easing: 'ease-in-out', iterations: Infinity },
+    )
+    dotsFill.animate(
+      [{ width: '0' }, { width: '1.35em' }],
+      { duration: 1150, easing: 'steps(4, end)', iterations: Infinity },
+    )
   }
 
   function renderGenerationProgress(): void {

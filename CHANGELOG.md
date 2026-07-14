@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+
+- Make the Generating and Regenerating ellipsis visibly cycle from one to three dots on mobile.
+- Keep the small non-spatial status animation available when a WebView reports reduced motion.
+
 ## 1.0.2
 
 - Add a persisted 100%-160% Feed text-size slider in Settings.
