@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Replace the Generating and Regenerating pulse with a three-dot wave animation.
+- Show the same animated wave beside the live output-token count.
+
 ## 1.0.3
 
 - Make the Generating and Regenerating ellipsis visibly cycle from one to three dots on mobile.

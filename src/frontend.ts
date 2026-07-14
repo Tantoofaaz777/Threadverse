@@ -259,24 +259,31 @@ const STYLES = `
     display: inline-flex;
     align-items: baseline;
     color: var(--lumiverse-primary, var(--lumiverse-accent));
-    opacity: .62;
   }
 
   .threadverse-button.is-generating:disabled { opacity: 1; }
 
-  .threadverse-generating-dots {
-    display: inline-block;
+  .threadverse-wave-dots {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-start;
     min-width: 1.35em;
     width: 1.35em;
+    margin-left: .08em;
+    line-height: 1;
+    vertical-align: baseline;
     white-space: nowrap;
   }
 
-  .threadverse-generating-dots-fill {
+  .threadverse-wave-dot {
     display: inline-block;
-    overflow: hidden;
-    width: 0;
-    vertical-align: bottom;
-    white-space: nowrap;
+    opacity: .45;
+    transform: translateY(0);
+  }
+
+  .threadverse-generation-token-status {
+    display: inline-flex;
+    align-items: baseline;
   }
 
   .threadverse-message-list {
@@ -568,7 +575,10 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
           <div class="threadverse-generation-progress" data-generation-progress role="status" aria-live="polite" hidden>
             <span aria-hidden="true"></span>
-            <span data-generation-token-count>0 output tokens received</span>
+            <span class="threadverse-generation-token-status">
+              <span data-generation-token-count>0 output tokens received</span>
+              <span data-generation-token-dots></span>
+            </span>
           </div>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
@@ -688,6 +698,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
   const generationProgress = shell.querySelector<HTMLElement>('[data-generation-progress]')!
   const generationTokenCount = shell.querySelector<HTMLElement>('[data-generation-token-count]')!
+  const generationTokenDots = shell.querySelector<HTMLElement>('[data-generation-token-dots]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
@@ -720,6 +731,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let instructionPresetHandle: SpindleSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let settingsComponents: Array<{ destroy(): void }> = []
+  const waveAnimations = new WeakMap<HTMLElement, Animation[]>()
 
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
 
@@ -728,38 +740,62 @@ export function setup(ctx: SpindleFrontendContext) {
     contextError.hidden = true
   }
 
+  function createWaveDots(): HTMLElement {
+    const dots = document.createElement('span')
+    dots.className = 'threadverse-wave-dots'
+    dots.setAttribute('aria-hidden', 'true')
+    const animations: Animation[] = []
+    for (let index = 0; index < 3; index += 1) {
+      const dot = document.createElement('span')
+      dot.className = 'threadverse-wave-dot'
+      dot.textContent = '.'
+      animations.push(dot.animate([
+        { transform: 'translateY(0)', opacity: .45, offset: 0 },
+        { transform: 'translateY(-.34em)', opacity: 1, offset: .3 },
+        { transform: 'translateY(0)', opacity: .45, offset: .6 },
+        { transform: 'translateY(0)', opacity: .45, offset: 1 },
+      ], {
+        duration: 900,
+        delay: index * 120,
+        easing: 'ease-in-out',
+        iterations: Infinity,
+      }))
+      dots.appendChild(dot)
+    }
+    waveAnimations.set(dots, animations)
+    return dots
+  }
+
+  function cancelWaveDots(root: ParentNode): void {
+    for (const dots of root.querySelectorAll<HTMLElement>('.threadverse-wave-dots')) {
+      for (const animation of waveAnimations.get(dots) ?? []) animation.cancel()
+      waveAnimations.delete(dots)
+    }
+  }
+
   function setAnimatedButtonLabel(button: HTMLButtonElement, label: string): void {
     button.classList.add('is-generating')
     const animated = document.createElement('span')
     animated.className = 'threadverse-generating-label'
     animated.append(document.createTextNode(label))
-    const dots = document.createElement('span')
-    dots.className = 'threadverse-generating-dots'
-    dots.setAttribute('aria-hidden', 'true')
-    const dotsFill = document.createElement('span')
-    dotsFill.className = 'threadverse-generating-dots-fill'
-    dotsFill.textContent = '...'
-    dots.appendChild(dotsFill)
+    const dots = createWaveDots()
     animated.appendChild(dots)
+    cancelWaveDots(button)
     button.replaceChildren(animated)
     button.setAttribute('aria-label', `${label}...`)
-    animated.animate(
-      [{ opacity: .62 }, { opacity: 1 }, { opacity: .62 }],
-      { duration: 1800, easing: 'ease-in-out', iterations: Infinity },
-    )
-    dotsFill.animate(
-      [{ width: '0' }, { width: '1.35em' }],
-      { duration: 1150, easing: 'steps(4, end)', iterations: Infinity },
-    )
   }
 
   function renderGenerationProgress(): void {
     const visible = generationPending && activeChat?.id === generationChatId
     generationProgress.hidden = !visible
     if (visible) {
+      if (!generationTokenDots.firstChild) generationTokenDots.appendChild(createWaveDots())
       generationTokenCount.textContent = generationOutputTokens === 0
         ? '0 output tokens received'
         : `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'} received`
+    } else {
+      cancelWaveDots(generationTokenDots)
+      generationTokenDots.replaceChildren()
     }
   }
 
@@ -790,6 +826,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (pending && generationOperation === 'generate') {
       setAnimatedButtonLabel(saveButton, 'Generating')
     } else {
+      cancelWaveDots(saveButton)
       saveButton.classList.remove('is-generating')
       saveButton.textContent = 'Generate Thread'
       saveButton.removeAttribute('aria-label')
@@ -1131,6 +1168,7 @@ export function setup(ctx: SpindleFrontendContext) {
         .join(' - ')
     resetButton.disabled = operationPending || generationPending || !activeChat || rounds.length === 0
     updateSummary()
+    renderGenerationProgress()
   }
 
   function avatarHue(username: string): number {
@@ -1259,6 +1297,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function renderFeed(): void {
     feedRoundHandle?.destroy()
     feedRoundHandle = null
+    cancelWaveDots(feedList)
     feedList.replaceChildren()
     if (feeds.length === 0) {
       const empty = document.createElement('div')
@@ -1714,6 +1753,7 @@ export function setup(ctx: SpindleFrontendContext) {
     window.removeEventListener('pagehide', flushPendingAutomaticSave)
     document.removeEventListener('visibilitychange', flushWhenHidden)
     destroySettingsComponents()
+    cancelWaveDots(shell)
     drawer.destroy()
     removeStyle()
     ctx.dom.cleanup()
