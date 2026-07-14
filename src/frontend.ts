@@ -1,5 +1,6 @@
 import type {
   SpindleFrontendContext,
+  SpindleModalHandle,
   SpindleNumericInputHandle,
   SpindleSelectHandle,
   SpindleTextAreaHandle,
@@ -264,6 +265,13 @@ const STYLES = `
     color: var(--lumiverse-danger, #ef4444);
   }
 
+  .threadverse-button--warning,
+  .threadverse-button--warning:hover {
+    border-color: var(--lumiverse-warning, #f59e0b);
+    background: transparent;
+    color: var(--lumiverse-warning, #f59e0b);
+  }
+
   .threadverse-generating-label {
     display: inline-flex;
     align-items: baseline;
@@ -377,6 +385,38 @@ const STYLES = `
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
   .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto auto; }
   .threadverse-feed-round-select { min-width: 0; }
+  .threadverse-version-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 30px;
+  }
+  .threadverse-version-count {
+    min-width: 44px;
+    color: var(--lumiverse-text-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+  .threadverse-delete-choice { display: grid; gap: 16px; }
+  .threadverse-delete-choice-message {
+    margin: 0;
+    color: var(--lumiverse-text);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .threadverse-delete-choice-detail {
+    margin: -8px 0 0;
+    color: var(--lumiverse-text-muted);
+    font-size: 10px;
+  }
+  .threadverse-delete-choice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
   .threadverse-reddit { overflow: hidden; padding: 0; }
   .threadverse-reddit-post { padding: 12px; border-bottom: 1px solid var(--lumiverse-border); }
   .threadverse-reddit-title { margin: 5px 0 9px; color: var(--lumiverse-text); font-size: calc(16px * var(--threadverse-feed-font-scale, 1)); line-height: 1.3; }
@@ -421,6 +461,7 @@ const STYLES = `
     .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
     .threadverse-feed-controls .threadverse-feed-round-select { grid-column: 1 / -1; }
     .threadverse-feed-controls .threadverse-icon-button { width: var(--lumiverse-btn-icon-sm, 32px); }
+    .threadverse-delete-choice-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .threadverse-comment--root { padding: 11px 9px; }
     .threadverse-comment { padding-left: 8px; }
     .threadverse-comment--root { padding-left: 9px; }
@@ -714,6 +755,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let feeds: FeedRound[] = []
   let selectedFeedRoundId: string | null = null
   let feedRoundHandle: SpindleSelectHandle | null = null
+  let deleteChoiceModal: SpindleModalHandle | null = null
   let startIndex: number | null = null
   let endIndex: number | null = null
   let operationPending = false
@@ -1199,7 +1241,7 @@ export function setup(ctx: SpindleFrontendContext) {
     return row
   }
 
-  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more' | 'copy'
+  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more' | 'copy' | 'chevron-left' | 'chevron-right'
 
   const ACTION_ICON_PATHS: Record<ActionIcon, string[]> = {
     upvote: ['M12 3 4.5 10.5h4.25V21h6.5V10.5h4.25L12 3Z'],
@@ -1209,6 +1251,8 @@ export function setup(ctx: SpindleFrontendContext) {
     share: ['M15 8l5-5m0 0h-5m5 0v5', 'M11 5H7a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-4'],
     more: ['M12 6.5h.01', 'M12 12h.01', 'M12 17.5h.01'],
     copy: ['M8 8h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8Z', 'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3'],
+    'chevron-left': ['m15 18-6-6 6-6'],
+    'chevron-right': ['m9 18 6-6-6-6'],
   }
 
   function actionIcon(icon: ActionIcon): SVGSVGElement {
@@ -1286,6 +1330,12 @@ export function setup(ctx: SpindleFrontendContext) {
     return comments.reduce((total, comment) => total + 1 + totalComments(comment.replies), 0)
   }
 
+  function activeVersion(round: FeedRound) {
+    return round.feedVersions.find((version) => version.id === round.activeFeedVersionId)
+      ?? round.feedVersions.at(-1)
+      ?? null
+  }
+
   async function copyTextToClipboard(text: string): Promise<void> {
     try {
       if (navigator.clipboard?.writeText) {
@@ -1313,14 +1363,53 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   async function copyRound(roundId: string): Promise<void> {
-    const feed = feeds.find((round) => round.id === roundId)?.feed
-    if (!feed) return
+    const round = feeds.find((candidate) => candidate.id === roundId)
+    const version = round ? activeVersion(round) : null
+    if (!version) return
     try {
-      await copyTextToClipboard(serializeFeedAsPlainText(feed))
+      await copyTextToClipboard(serializeFeedAsPlainText(version.feed))
       send({ type: 'threadverse:copy_result', success: true })
     } catch {
       send({ type: 'threadverse:copy_result', success: false })
     }
+  }
+
+  function selectRoundVersion(roundId: string, versionId: string): void {
+    if (!activeChat || generationPending || operationPending) return
+    const round = feeds.find((candidate) => candidate.id === roundId)
+    if (!round || round.activeFeedVersionId === versionId) return
+    operationPending = true
+    renderFeed()
+    send({ type: 'threadverse:select_feed_version', chatId: activeChat.id, roundId, versionId })
+  }
+
+  function versionNavigation(round: FeedRound): HTMLElement | null {
+    const version = activeVersion(round)
+    if (!version || round.feedVersions.length <= 1) return null
+    const index = round.feedVersions.findIndex((candidate) => candidate.id === version.id)
+    const navigation = document.createElement('div')
+    navigation.className = 'threadverse-version-nav'
+
+    const button = (direction: 'previous' | 'next', targetIndex: number) => {
+      const targetVersion = round.feedVersions[targetIndex]
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = 'threadverse-button threadverse-icon-button threadverse-button--compact'
+      element.dataset.action = 'select-feed-version'
+      element.dataset.roundId = round.id
+      if (targetVersion) element.dataset.versionId = targetVersion.id
+      element.disabled = !targetVersion || generationPending || operationPending
+      element.title = `${direction === 'previous' ? 'Previous' : 'Next'} version`
+      element.setAttribute('aria-label', element.title)
+      element.appendChild(actionIcon(direction === 'previous' ? 'chevron-left' : 'chevron-right'))
+      return element
+    }
+
+    const count = document.createElement('span')
+    count.className = 'threadverse-version-count'
+    count.textContent = `${index + 1} / ${round.feedVersions.length}`
+    navigation.append(button('previous', index - 1), count, button('next', index + 1))
+    return navigation
   }
 
   function renderFeed(): void {
@@ -1339,6 +1428,7 @@ export function setup(ctx: SpindleFrontendContext) {
       selectedFeedRoundId = feeds.at(-1)!.id
     }
     const round = feeds.find((item) => item.id === selectedFeedRoundId)!
+    const selectedVersion = activeVersion(round)
     const toolbar = document.createElement('div')
     toolbar.className = 'threadverse-feed-toolbar threadverse-feed-controls'
     const selectTarget = document.createElement('div')
@@ -1357,14 +1447,14 @@ export function setup(ctx: SpindleFrontendContext) {
     ) {
       setAnimatedButtonLabel(regenerateButton, 'Regenerating')
     } else {
-      regenerateButton.textContent = round.feed ? 'Regenerate' : 'Generate'
+      regenerateButton.textContent = selectedVersion ? 'Regenerate' : 'Generate'
     }
     const copyButton = document.createElement('button')
     copyButton.type = 'button'
     copyButton.className = 'threadverse-button threadverse-icon-button'
     copyButton.dataset.action = 'copy-round'
     copyButton.dataset.roundId = round.id
-    copyButton.disabled = !round.feed
+    copyButton.disabled = !selectedVersion || operationPending
     copyButton.title = 'Copy thread'
     copyButton.setAttribute('aria-label', 'Copy thread')
     copyButton.appendChild(actionIcon('copy'))
@@ -1386,13 +1476,16 @@ export function setup(ctx: SpindleFrontendContext) {
       options: [...feeds].reverse().map((optionRound) => ({
         value: optionRound.id,
         label: `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})`,
-        sublabel: optionRound.feed ? undefined : 'No feed generated',
+        sublabel: activeVersion(optionRound) ? undefined : 'No feed generated',
       })),
       onChange: (roundId) => {
         selectedFeedRoundId = roundId
         renderFeed()
       },
     })
+
+    const navigation = versionNavigation(round)
+    if (navigation) feedList.appendChild(navigation)
 
     if (generationPending) {
       const status = document.createElement('div')
@@ -1409,14 +1502,14 @@ export function setup(ctx: SpindleFrontendContext) {
       feedList.appendChild(status)
     }
 
-    if (!round.feed) {
+    if (!selectedVersion) {
       const empty = document.createElement('div')
       empty.className = 'threadverse-card threadverse-empty'
       empty.textContent = 'This round was saved before feed generation was added.'
       feedList.appendChild(empty)
       return
     }
-    const feed = round.feed
+    const feed = selectedVersion.feed
     const card = document.createElement('article')
     card.className = 'threadverse-card threadverse-reddit'
     const post = document.createElement('section')
@@ -1580,20 +1673,99 @@ export function setup(ctx: SpindleFrontendContext) {
     send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
   }
 
+  function showVersionDeleteChoice(round: FeedRound): Promise<'cancel' | 'version' | 'round'> {
+    const selectedVersion = activeVersion(round)
+    const selectedIndex = selectedVersion
+      ? round.feedVersions.findIndex((version) => version.id === selectedVersion.id)
+      : -1
+    deleteChoiceModal?.dismiss()
+    const modal = ctx.ui.showModal({ title: 'Delete', width: 420 })
+    deleteChoiceModal = modal
+
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (choice: 'cancel' | 'version' | 'round') => {
+        if (settled) return
+        settled = true
+        if (deleteChoiceModal === modal) deleteChoiceModal = null
+        modal.dismiss()
+        resolve(choice)
+      }
+      modal.onDismiss(() => {
+        if (settled) return
+        settled = true
+        if (deleteChoiceModal === modal) deleteChoiceModal = null
+        resolve('cancel')
+      })
+
+      const content = document.createElement('div')
+      content.className = 'threadverse-delete-choice'
+      const message = document.createElement('p')
+      message.className = 'threadverse-delete-choice-message'
+      message.textContent = 'Delete just this version, or the entire round with all versions?'
+      const detail = document.createElement('p')
+      detail.className = 'threadverse-delete-choice-detail'
+      detail.textContent = `Round ${round.sequence} · Version ${selectedIndex + 1} of ${round.feedVersions.length}`
+      const actions = document.createElement('div')
+      actions.className = 'threadverse-delete-choice-actions'
+
+      const cancel = document.createElement('button')
+      cancel.type = 'button'
+      cancel.className = 'threadverse-button'
+      cancel.textContent = 'Cancel'
+      cancel.addEventListener('click', () => finish('cancel'))
+      const version = document.createElement('button')
+      version.type = 'button'
+      version.className = 'threadverse-button threadverse-button--warning'
+      version.textContent = 'Version'
+      version.addEventListener('click', () => finish('version'))
+      const wholeRound = document.createElement('button')
+      wholeRound.type = 'button'
+      wholeRound.className = 'threadverse-button threadverse-button--danger'
+      wholeRound.textContent = 'Round'
+      wholeRound.addEventListener('click', () => finish('round'))
+      actions.append(cancel, version, wholeRound)
+      content.append(message, detail, actions)
+      modal.root.appendChild(content)
+    })
+  }
+
   async function deleteRound(roundId: string): Promise<void> {
     if (!activeChat || generationPending || operationPending) return
     const round = feeds.find((candidate) => candidate.id === roundId)
     if (!round) return
-    const result = await ctx.ui.showConfirm({
-      title: 'Delete continuity round',
-      message: `Delete Round ${round.sequence}? Its messages will become available in Make again.`,
-      variant: 'danger',
-      confirmLabel: 'Delete',
-    })
-    if (!result.confirmed || !activeChat) return
+    const chatId = activeChat.id
+    const selectedVersion = activeVersion(round)
+    let choice: 'cancel' | 'version' | 'round'
+    try {
+      if (selectedVersion && round.feedVersions.length > 1) {
+        choice = await showVersionDeleteChoice(round)
+      } else {
+        const result = await ctx.ui.showConfirm({
+          title: 'Delete continuity round',
+          message: `Delete Round ${round.sequence}? Its messages will become available in Make again.`,
+          variant: 'danger',
+          confirmLabel: 'Delete',
+        })
+        choice = result.confirmed ? 'round' : 'cancel'
+      }
+    } catch {
+      showError('Threadverse could not open the delete confirmation.')
+      return
+    }
+    if (choice === 'cancel' || !activeChat || activeChat.id !== chatId) return
     operationPending = true
     renderFeed()
-    send({ type: 'threadverse:delete_round', chatId: activeChat.id, roundId })
+    if (choice === 'version' && selectedVersion) {
+      send({
+        type: 'threadverse:delete_feed_version',
+        chatId,
+        roundId,
+        versionId: selectedVersion.id,
+      })
+    } else {
+      send({ type: 'threadverse:delete_round', chatId, roundId })
+    }
   }
 
   function resetContinuity(): void {
@@ -1623,6 +1795,10 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'save') generateSelectedRange()
     if (action === 'cancel-generation') send({ type: 'threadverse:cancel_generation' })
     if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
+    if (action === 'select-feed-version') {
+      const control = target.closest<HTMLElement>('[data-round-id]')!
+      if (control.dataset.versionId) selectRoundVersion(control.dataset.roundId!, control.dataset.versionId)
+    }
     if (action === 'copy-round') void copyRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'reset') resetContinuity()
@@ -1783,6 +1959,8 @@ export function setup(ctx: SpindleFrontendContext) {
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)
     feedRoundHandle?.destroy()
+    deleteChoiceModal?.dismiss()
+    deleteChoiceModal = null
     search.removeEventListener('input', renderMessages)
     unusedOnly.removeEventListener('change', renderMessages)
     maintainFandomToggle.removeEventListener('change', handleMaintainFandomChange)

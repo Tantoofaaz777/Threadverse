@@ -6,21 +6,27 @@ import {
   type BackendToFrontendMessage,
   type ChatMessageSummary,
   type ConnectionSummary,
+  type FeedVersion,
   type InstructionPreset,
   type ThreadverseAutomaticSettings,
+  type ThreadverseFeed,
   type ThreadversePromptSettings,
 } from './shared'
 import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
 import { buildThreadversePrompt } from './prompt'
 import {
   DEFAULT_INSTRUCTIONS,
+  activeFeedVersion,
   applyAutomaticSettings,
   applyPromptSettings,
   emptyStore,
   feedRounds,
   normalizeStore,
+  pruneInactiveFeedVersions,
+  removeFeedVersion,
   resolveContinuity,
   resolveSamplers,
+  selectFeedVersion,
   summarizeRounds,
   type StoredRound,
   type ThreadverseStore,
@@ -196,14 +202,18 @@ function promptForRound(store: ThreadverseStore, chatId: string, recent: ChatMes
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
   const previous = limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
+  const fandomCandidates = earlier.flatMap((round) => {
+    const version = activeFeedVersion(round)
+    return version ? [{ round, feed: version.feed }] : []
+  })
   const fandom = store.settings.maintainFandomContinuity && limits.fandomThreadLimit > 0
-    ? earlier.filter((round) => round.feed).slice(-limits.fandomThreadLimit) : []
+    ? fandomCandidates.slice(-limits.fandomThreadLimit) : []
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
   return buildThreadversePrompt({
     previousRanges: previous.map((round) => ({ label: `ROUND ${round.sequence}`, content: formatMessages(round.messages) })),
     recentRange: { label: 'CURRENT RANGE', content: formatMessages(recent) },
-    fandomContinuity: fandom.map((round) => ({ label: `FANDOM THREAD ${round.sequence}`, content: serializeFeedForContinuity(round.feed!) })),
+    fandomContinuity: fandom.map(({ round, feed }) => ({ label: `FANDOM THREAD ${round.sequence}`, content: serializeFeedForContinuity(feed) })),
     instructions: preset.instructions,
   })
 }
@@ -296,18 +306,22 @@ async function finishSuccessfulGeneration(
 }
 
 async function finishSuccessfulMutation(
-  operation: 'delete_round' | 'reset_continuity',
+  operation: 'select_feed_version' | 'delete_feed_version' | 'delete_round' | 'reset_continuity',
   chatId: string,
-  notice: string,
+  notice: string | undefined,
   userId: string,
 ): Promise<void> {
   try {
-    await sendActiveChat(userId, { notice }, chatId)
+    await sendActiveChat(userId, notice ? { notice } : undefined, chatId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown refresh error.'
     spindle.log.error(`[Threadverse] Mutation saved, but the frontend refresh failed: ${message}`)
   }
   send({ type: 'threadverse:mutation_completed', operation, chatId }, userId)
+}
+
+function createFeedVersion(feed: ThreadverseFeed): FeedVersion {
+  return { id: crypto.randomUUID(), createdAt: new Date().toISOString(), feed }
 }
 
 async function selectMessages(chatId: string, startId: string, endId: string, userId: string) {
@@ -330,11 +344,13 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
   const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
   if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
   const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId, 'generate')
+  const feedVersion = createFeedVersion(feed)
   const round: StoredRound = {
     id: crypto.randomUUID(), sequence: existing.length + 1, createdAt: new Date().toISOString(),
     startMessageId: selection.messages[0].id, endMessageId: selection.messages.at(-1)!.id,
     startIndex: selection.messages[0].index, endIndex: selection.messages.at(-1)!.index,
-    messageCount: selection.messages.length, messages: selection.messages, feed,
+    messageCount: selection.messages.length, messages: selection.messages,
+    feedVersions: [feedVersion], activeFeedVersionId: feedVersion.id,
   }
   await queueStoreWrite(userId, async () => {
     const latest = await loadStore(userId)
@@ -343,6 +359,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('This range was added to continuity while generation was running.')
     round.sequence = continuity.rounds.length + 1
     continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
+    pruneInactiveFeedVersions(continuity.rounds, latest.settings)
     await saveStore(latest, userId)
   })
   await finishSuccessfulGeneration(
@@ -360,13 +377,52 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
   if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
   const round = continuity.rounds[index]
   const feed = await runGeneration(store, chatId, round.messages, index, userId, 'regenerate', roundId)
+  const feedVersion = createFeedVersion(feed)
   await queueStoreWrite(userId, async () => {
     const latest = await loadStore(userId)
     const target = latest.chats[chatId]?.rounds.find((item) => item.id === roundId)
     if (!target) throw new Error('That continuity round was removed while generation was running.')
-    target.feed = feed; await saveStore(latest, userId)
+    target.feedVersions.push(feedVersion)
+    target.activeFeedVersionId = feedVersion.id
+    await saveStore(latest, userId)
   })
   await finishSuccessfulGeneration(chatId, roundId, `Round ${round.sequence} regenerated.`, userId)
+}
+
+async function selectRoundFeedVersion(
+  chatId: string,
+  roundId: string,
+  versionId: string,
+  userId: string,
+): Promise<void> {
+  const activeChat = await spindle.chats.getActive(userId)
+  if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const round = store.chats[chatId]?.rounds.find((candidate) => candidate.id === roundId)
+    if (!round) throw new Error('That continuity round no longer exists.')
+    if (!selectFeedVersion(round, versionId)) throw new Error('That thread version no longer exists.')
+    await saveStore(store, userId)
+  })
+  await finishSuccessfulMutation('select_feed_version', chatId, undefined, userId)
+}
+
+async function deleteRoundFeedVersion(
+  chatId: string,
+  roundId: string,
+  versionId: string,
+  userId: string,
+): Promise<void> {
+  const activeChat = await spindle.chats.getActive(userId)
+  if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const round = store.chats[chatId]?.rounds.find((candidate) => candidate.id === roundId)
+    if (!round) throw new Error('That continuity round no longer exists.')
+    if (!removeFeedVersion(round, versionId)) throw new Error('The current thread version cannot be deleted.')
+    await saveStore(store, userId)
+  })
+  await finishSuccessfulMutation('delete_feed_version', chatId, undefined, userId)
 }
 
 async function deleteRound(chatId: string, roundId: string, userId: string): Promise<void> {
@@ -424,6 +480,8 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     if (payload.type === 'threadverse:generate_thread') { await generateThread(payload, userId); return }
     if (payload.type === 'threadverse:regenerate_thread') { await regenerateThread(payload.chatId, payload.roundId, userId); return }
+    if (payload.type === 'threadverse:select_feed_version') { await selectRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
+    if (payload.type === 'threadverse:delete_feed_version') { await deleteRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
     if (payload.type === 'threadverse:delete_round') { await deleteRound(payload.chatId, payload.roundId, userId); return }
     if (payload.type === 'threadverse:cancel_generation') { activeGenerations.get(userId)?.abort(); return }
     if (payload.type === 'threadverse:copy_result') {
@@ -456,7 +514,16 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
         chatId: payload.chatId,
       }, userId); return
     }
-    if (payload.type === 'threadverse:reset_continuity' || payload.type === 'threadverse:delete_round') { send({ type: 'threadverse:operation_error', error: message }, userId); return }
+    if (
+      payload.type === 'threadverse:select_feed_version'
+      || payload.type === 'threadverse:delete_feed_version'
+      || payload.type === 'threadverse:reset_continuity'
+      || payload.type === 'threadverse:delete_round'
+    ) {
+      spindle.toast.error(message, { userId })
+      send({ type: 'threadverse:operation_error', error: message }, userId)
+      return
+    }
     spindle.toast.error(message, { userId }); send({ type: 'threadverse:operation_error', error: message }, userId)
   }
 })

@@ -3,6 +3,7 @@ import {
   MAX_FEED_FONT_SCALE,
   MIN_FEED_FONT_SCALE,
   type ChatMessageSummary,
+  type FeedVersion,
   type InstructionPreset,
   type RoundSummary,
   type ThreadverseAutomaticSettings,
@@ -22,7 +23,8 @@ const CURRENT_DEFAULT_INSTRUCTIONS = LEGACY_DEFAULT_INSTRUCTIONS.replace('votes,
 
 export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
   messages: ChatMessageSummary[]
-  feed: ThreadverseFeed | null
+  feedVersions: FeedVersion[]
+  activeFeedVersionId: string | null
 }
 
 export interface ChatContinuity {
@@ -162,23 +164,66 @@ function normalizeStoredFeed(value: unknown): ThreadverseFeed | null {
   }
 }
 
+function normalizeStoredFeedVersions(
+  value: Record<string, unknown>,
+  roundId: string,
+  roundCreatedAt: string,
+): FeedVersion[] {
+  const seenIds = new Set<string>()
+  const versions = Array.isArray(value.feedVersions)
+    ? value.feedVersions.flatMap((candidate, index): FeedVersion[] => {
+        if (!isRecord(candidate)) return []
+        const feed = normalizeStoredFeed(candidate.feed)
+        if (!feed) return []
+        const requestedId = typeof candidate.id === 'string' && candidate.id
+          ? candidate.id
+          : `${roundId}-feed-${index + 1}`
+        let id = requestedId
+        let suffix = 2
+        while (seenIds.has(id)) {
+          id = `${requestedId}-recovered-${suffix}`
+          suffix += 1
+        }
+        seenIds.add(id)
+        return [{
+          id,
+          createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : roundCreatedAt,
+          feed,
+        }]
+      })
+    : []
+
+  if (versions.length > 0) return versions
+  const legacyFeed = normalizeStoredFeed(value.feed)
+  return legacyFeed ? [{ id: `${roundId}-feed-1`, createdAt: roundCreatedAt, feed: legacyFeed }] : []
+}
+
 function normalizeStoredRound(value: unknown, sequence: number): StoredRound | null {
   if (!isRecord(value) || !Array.isArray(value.messages)) return null
   const messages = value.messages.map(normalizeStoredMessage).filter((message): message is ChatMessageSummary => Boolean(message))
   if (messages.length === 0) return null
   const first = messages[0]
   const last = messages.at(-1)!
+  const id = typeof value.id === 'string' && value.id ? value.id : `recovered-round-${sequence}-${first.id}`
+  const createdAt = typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString()
+  const feedVersions = normalizeStoredFeedVersions(value, id, createdAt)
+  const requestedActiveVersionId = value.activeFeedVersionId
+  const activeFeedVersionId = typeof requestedActiveVersionId === 'string'
+    && feedVersions.some((version) => version.id === requestedActiveVersionId)
+    ? requestedActiveVersionId
+    : feedVersions.at(-1)?.id ?? null
   return {
-    id: typeof value.id === 'string' && value.id ? value.id : `recovered-round-${sequence}-${first.id}`,
+    id,
     sequence,
-    createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
+    createdAt,
     startMessageId: first.id,
     endMessageId: last.id,
     startIndex: first.index,
     endIndex: last.index,
     messageCount: messages.length,
     messages,
-    feed: normalizeStoredFeed(value.feed),
+    feedVersions,
+    activeFeedVersionId,
   }
 }
 
@@ -299,7 +344,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
 }
 
 export function summarizeRounds(rounds: StoredRound[]): RoundSummary[] {
-  return rounds.map(({ messages, feed: _feed, ...summary }) => ({
+  return rounds.map(({ messages, feedVersions: _feedVersions, activeFeedVersionId: _activeFeedVersionId, ...summary }) => ({
     ...summary,
     messageIds: messages.map((message) => message.id),
   }))
@@ -310,4 +355,47 @@ export function feedRounds(rounds: StoredRound[]) {
     ...round,
     messageIds: messages.map((message) => message.id),
   }))
+}
+
+export function activeFeedVersion(round: StoredRound): FeedVersion | null {
+  return round.feedVersions.find((version) => version.id === round.activeFeedVersionId)
+    ?? round.feedVersions.at(-1)
+    ?? null
+}
+
+export function selectFeedVersion(round: StoredRound, versionId: string): boolean {
+  if (!round.feedVersions.some((version) => version.id === versionId)) return false
+  round.activeFeedVersionId = versionId
+  return true
+}
+
+export function removeFeedVersion(round: StoredRound, versionId: string): boolean {
+  if (round.feedVersions.length <= 1) return false
+  const index = round.feedVersions.findIndex((version) => version.id === versionId)
+  if (index < 0) return false
+  round.feedVersions.splice(index, 1)
+  if (round.activeFeedVersionId === versionId) {
+    round.activeFeedVersionId = round.feedVersions[Math.min(index, round.feedVersions.length - 1)].id
+  }
+  return true
+}
+
+export function pruneInactiveFeedVersions(
+  rounds: StoredRound[],
+  settings: ThreadverseSettings,
+): number {
+  if (!settings.maintainFandomContinuity) return 0
+  const limit = resolveContinuity(settings).fandomThreadLimit
+  if (limit <= 0) return 0
+  const candidates = rounds.filter((round) => activeFeedVersion(round))
+  const expired = candidates.slice(0, Math.max(0, candidates.length - limit))
+  let removed = 0
+  for (const round of expired) {
+    const active = activeFeedVersion(round)
+    if (!active || round.feedVersions.length <= 1) continue
+    removed += round.feedVersions.length - 1
+    round.feedVersions = [active]
+    round.activeFeedVersionId = active.id
+  }
+  return removed
 }

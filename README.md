@@ -23,7 +23,9 @@ The extension currently includes:
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
 - cancellable streamed generation with live estimated output-token progress and atomic round persistence;
 - tolerant validation of a compact JSON feed response, including legacy feed compatibility;
-- feed regeneration that replaces the existing result without duplicating its round;
+- feed regeneration that adds a new version without duplicating its continuity round;
+- swipe-style regeneration history with one active version per round and automatic legacy migration;
+- silent inactive-version pruning outside the configured fandom continuity window;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
 - one-tap clean-text copying of the selected thread for TTS and other apps;
 - a mobile-safe Feed text-size slider with automatic persistence;

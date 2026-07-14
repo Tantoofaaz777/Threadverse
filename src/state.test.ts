@@ -6,13 +6,30 @@ import { shouldAcceptActiveChatResponse } from './chat-response'
 import { DEFAULT_FEED_FONT_SCALE, isFrontendMessage } from './shared'
 import {
   DEFAULT_SETTINGS,
+  activeFeedVersion,
   applyAutomaticSettings,
   applyPromptSettings,
   emptyStore,
   normalizeStore,
+  pruneInactiveFeedVersions,
+  removeFeedVersion,
   resolveContinuity,
   resolveSamplers,
+  selectFeedVersion,
 } from './state'
+
+const storedFeed = (title: string) => ({
+  title,
+  post: { username: 'OP', body: `${title} opening`, score: 10 },
+  comments: [{ username: 'viewer', body: `${title} comment`, score: 3 }],
+})
+
+const storedMessage = (id: string, index: number) => ({
+  id,
+  index,
+  role: 'assistant',
+  content: `Message ${index}`,
+})
 
 describe('Threadverse continuity', () => {
   test('ignores stale requested chat states but accepts unsolicited updates', () => {
@@ -21,8 +38,14 @@ describe('Threadverse continuity', () => {
     expect(shouldAcceptActiveChatResponse(undefined, 5)).toBe(true)
   })
 
-  test('accepts clipboard feedback messages for completion toasts', () => {
+  test('accepts clipboard and feed-version frontend messages', () => {
     expect(isFrontendMessage({ type: 'threadverse:copy_result', success: true })).toBe(true)
+    expect(isFrontendMessage({
+      type: 'threadverse:select_feed_version', chatId: 'chat', roundId: 'round', versionId: 'version',
+    })).toBe(true)
+    expect(isFrontendMessage({
+      type: 'threadverse:delete_feed_version', chatId: 'chat', roundId: 'round', versionId: 'version',
+    })).toBe(true)
   })
 
   test('clicking either selected endpoint toggles only that endpoint off', () => {
@@ -96,8 +119,93 @@ describe('Threadverse continuity', () => {
       startIndex: 4,
       endIndex: 4,
       messageCount: 1,
-      feed: null,
+      feedVersions: [],
+      activeFeedVersionId: null,
     })
+  })
+
+  test('migrates a legacy feed into the first active version', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {
+        chat: {
+          rounds: [{
+            id: 'round-1',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            messages: [storedMessage('m1', 1)],
+            feed: storedFeed('Legacy thread'),
+          }],
+        },
+      },
+    })
+    const round = store.chats.chat.rounds[0]
+
+    expect(round.feedVersions).toHaveLength(1)
+    expect(round.feedVersions[0]).toMatchObject({
+      id: 'round-1-feed-1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      feed: { title: 'Legacy thread' },
+    })
+    expect(round.activeFeedVersionId).toBe('round-1-feed-1')
+  })
+
+  test('selects and removes feed versions while preserving an adjacent active version', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {
+        chat: {
+          rounds: [{
+            id: 'round-1',
+            messages: [storedMessage('m1', 1)],
+            feedVersions: [
+              { id: 'v1', feed: storedFeed('Version 1') },
+              { id: 'v2', feed: storedFeed('Version 2') },
+              { id: 'v3', feed: storedFeed('Version 3') },
+            ],
+            activeFeedVersionId: 'v1',
+          }],
+        },
+      },
+    })
+    const round = store.chats.chat.rounds[0]
+
+    expect(selectFeedVersion(round, 'v2')).toBe(true)
+    expect(activeFeedVersion(round)?.id).toBe('v2')
+    expect(removeFeedVersion(round, 'v2')).toBe(true)
+    expect(round.feedVersions.map((version) => version.id)).toEqual(['v1', 'v3'])
+    expect(activeFeedVersion(round)?.id).toBe('v3')
+    expect(removeFeedVersion(round, 'v3')).toBe(true)
+    expect(activeFeedVersion(round)?.id).toBe('v1')
+    expect(removeFeedVersion(round, 'v1')).toBe(false)
+  })
+
+  test('silently prunes inactive versions only outside the fandom window', () => {
+    const rawRounds = Array.from({ length: 4 }, (_, index) => ({
+      id: `round-${index + 1}`,
+      messages: [storedMessage(`m${index + 1}`, index + 1)],
+      feedVersions: [
+        { id: `r${index + 1}-v1`, feed: storedFeed(`Round ${index + 1} first`) },
+        { id: `r${index + 1}-v2`, feed: storedFeed(`Round ${index + 1} active`) },
+      ],
+      activeFeedVersionId: `r${index + 1}-v${index === 0 ? 1 : 2}`,
+    }))
+    const store = normalizeStore({ version: 1, chats: { chat: { rounds: rawRounds } } })
+    store.settings.fandomThreadLimit = 2
+
+    expect(pruneInactiveFeedVersions(store.chats.chat.rounds, store.settings)).toBe(2)
+    expect(store.chats.chat.rounds.map((round) => round.feedVersions.length)).toEqual([1, 1, 2, 2])
+    expect(store.chats.chat.rounds[0].feedVersions[0].id).toBe('r1-v1')
+
+    const disabled = normalizeStore({ version: 1, chats: { chat: { rounds: rawRounds } } })
+    disabled.settings.fandomThreadLimit = 2
+    disabled.settings.maintainFandomContinuity = false
+    expect(pruneInactiveFeedVersions(disabled.chats.chat.rounds, disabled.settings)).toBe(0)
+    expect(disabled.chats.chat.rounds.every((round) => round.feedVersions.length === 2)).toBe(true)
+
+    const zeroLimit = normalizeStore({ version: 1, chats: { chat: { rounds: rawRounds } } })
+    zeroLimit.settings.fandomThreadLimit = 0
+    expect(pruneInactiveFeedVersions(zeroLimit.chats.chat.rounds, zeroLimit.settings)).toBe(0)
+    expect(zeroLimit.chats.chat.rounds.every((round) => round.feedVersions.length === 2)).toBe(true)
   })
 
   test('rekeys recovered chats and repairs duplicate round IDs', () => {

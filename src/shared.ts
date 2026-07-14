@@ -40,8 +40,15 @@ export interface ThreadverseFeed {
   comments: ThreadverseComment[]
 }
 
+export interface FeedVersion {
+  id: string
+  createdAt: string
+  feed: ThreadverseFeed
+}
+
 export interface FeedRound extends RoundSummary {
-  feed: ThreadverseFeed | null
+  feedVersions: FeedVersion[]
+  activeFeedVersionId: string | null
 }
 
 export interface ThreadverseSettingsPayload {
@@ -101,6 +108,8 @@ export type FrontendToBackendMessage =
       endMessageId: string
     }
   | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string }
+  | { type: 'threadverse:select_feed_version'; chatId: string; roundId: string; versionId: string }
+  | { type: 'threadverse:delete_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_round'; chatId: string; roundId: string }
   | { type: 'threadverse:cancel_generation' }
   | { type: 'threadverse:reset_continuity'; chatId: string }
@@ -120,7 +129,7 @@ export type BackendToFrontendMessage =
   | { type: 'threadverse:operation_error'; error: string }
   | {
       type: 'threadverse:mutation_completed'
-      operation: 'delete_round' | 'reset_continuity'
+      operation: 'select_feed_version' | 'delete_feed_version' | 'delete_round' | 'reset_continuity'
       chatId: string
     }
   | {
@@ -158,6 +167,8 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:generate_thread'
     || type === 'threadverse:regenerate_thread'
+    || type === 'threadverse:select_feed_version'
+    || type === 'threadverse:delete_feed_version'
     || type === 'threadverse:delete_round'
     || type === 'threadverse:cancel_generation'
     || type === 'threadverse:reset_continuity'

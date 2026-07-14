@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Preserve regenerations as navigable versions inside the same continuity round.
+- Use the active version for Feed rendering, copying, and future fandom continuity.
+- Offer Cancel, Version, and Round choices when deleting a round with multiple versions.
+- Silently discard inactive versions after a successful new round moves outside the configured fandom continuity window.
+- Migrate existing single-feed rounds into version history without data loss.
+
 ## 1.0.6
 
 - Add a compact SVG button that copies the selected thread as clean text for TTS and other apps.
