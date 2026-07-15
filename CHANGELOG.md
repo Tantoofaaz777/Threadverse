@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4
+
+- Open Feed immediately when generating a new round and show all live token progress there.
+- Remove generation progress from Make while keeping cancellation available in Feed.
+- Animate the complete generation status with a gentle wave and color pulse alongside the three moving dots.
+
 ## 1.1.3
 
 - Replace the oversized Feed delete button with Lumiverse's native-style Trash2 icon.

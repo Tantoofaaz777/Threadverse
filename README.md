@@ -29,7 +29,7 @@ The extension currently includes:
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
 - one-tap clean-text copying of the selected thread for TTS and other apps;
 - a mobile-safe Feed text-size slider with automatic persistence;
-- background completion toasts without automatic tab or drawer navigation;
+- immediate Feed navigation when a new round is explicitly started, with background completion toasts that never reopen it later;
 - a newest-first native round selector, lightweight CSS avatars, and nested replies;
 - per-round regeneration and deletion with native confirmation;
 - backend/frontend messaging;

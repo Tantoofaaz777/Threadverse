@@ -144,18 +144,6 @@ const STYLES = `
 
   .threadverse-context-value.is-recent { color: var(--lumiverse-success, #22c55e); }
 
-  .threadverse-generation-progress {
-    display: grid;
-    grid-template-columns: 112px minmax(0, 1fr);
-    gap: 8px;
-    color: var(--lumiverse-primary, var(--lumiverse-accent));
-    font-size: 9px;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.4;
-  }
-
-  .threadverse-generation-progress[hidden] { display: none; }
-
   .threadverse-context-error {
     color: var(--lumiverse-danger, #ef4444);
     font-size: 10px;
@@ -302,14 +290,32 @@ const STYLES = `
   .threadverse-generation-token-status {
     display: inline-flex;
     align-items: baseline;
+    color: var(--lumiverse-primary, var(--lumiverse-accent));
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
   }
 
-  .threadverse-generation-status-row {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+  .threadverse-generating-label,
+  .threadverse-generation-token-status {
+    transform-origin: center;
+    animation: threadverse-generation-status-wave 1.45s ease-in-out infinite;
+    will-change: transform, opacity, filter;
+  }
+
+  @keyframes threadverse-generation-status-wave {
+    0%, 100% { transform: translateY(0); opacity: .76; filter: brightness(.92); }
+    35% { transform: translateY(-.15em); opacity: 1; filter: brightness(1.1); }
+    70% { transform: translateY(.06em); opacity: .86; filter: brightness(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .threadverse-generating-label,
+    .threadverse-generation-token-status {
+      animation: none;
+      opacity: 1;
+      filter: none;
+    }
   }
 
   .threadverse-message-list {
@@ -636,16 +642,6 @@ export function setup(ctx: SpindleFrontendContext) {
             <span class="threadverse-context-label">Recent context</span>
             <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
           </div>
-          <div class="threadverse-generation-progress" data-generation-progress role="status" aria-live="polite" hidden>
-            <span aria-hidden="true"></span>
-            <span class="threadverse-generation-status-row">
-              <span class="threadverse-generation-token-status">
-                <span data-generation-token-count>0 output tokens received</span>
-                <span data-generation-token-dots></span>
-              </span>
-              <button class="threadverse-button threadverse-button--compact" type="button" data-action="cancel-generation" hidden>Cancel</button>
-            </span>
-          </div>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
         <div class="threadverse-toolbar">
@@ -755,15 +751,11 @@ export function setup(ctx: SpindleFrontendContext) {
   const search = shell.querySelector<HTMLInputElement>('.threadverse-search')!
   const unusedOnly = shell.querySelector<HTMLInputElement>('[data-unused-only]')!
   const saveButton = shell.querySelector<HTMLButtonElement>('[data-action="save"]')!
-  const cancelButton = shell.querySelector<HTMLButtonElement>('[data-action="cancel-generation"]')!
   const feedList = shell.querySelector<HTMLElement>('[data-feed-list]')!
   const resetButton = shell.querySelector<HTMLButtonElement>('[data-action="reset"]')!
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
-  const generationProgress = shell.querySelector<HTMLElement>('[data-generation-progress]')!
-  const generationTokenCount = shell.querySelector<HTMLElement>('[data-generation-token-count]')!
-  const generationTokenDots = shell.querySelector<HTMLElement>('[data-generation-token-dots]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
@@ -867,20 +859,6 @@ export function setup(ctx: SpindleFrontendContext) {
     if (tokenCount) updateGenerationTokenText(tokenCount)
   }
 
-  function renderGenerationProgress(): void {
-    const visible = generationPending
-      && generationOperation === 'generate'
-      && activeChat?.id === generationChatId
-    generationProgress.hidden = !visible
-    if (visible) {
-      if (!generationTokenDots.firstChild) generationTokenDots.appendChild(createWaveDots())
-      updateGenerationTokenText(generationTokenCount)
-    } else {
-      cancelWaveDots(generationTokenDots)
-      generationTokenDots.replaceChildren()
-    }
-  }
-
   function setGenerationPending(
     pending: boolean,
     cancellable = false,
@@ -904,7 +882,6 @@ export function setup(ctx: SpindleFrontendContext) {
       generationRoundId = null
       generationOutputTokens = 0
     }
-    cancelButton.hidden = !generationCancellable
     if (pending && generationOperation === 'generate') {
       setAnimatedButtonLabel(saveButton, 'Generating')
     } else {
@@ -913,7 +890,6 @@ export function setup(ctx: SpindleFrontendContext) {
       saveButton.textContent = 'Generate Thread'
       saveButton.removeAttribute('aria-label')
     }
-    renderGenerationProgress()
   }
 
   function clearGenerationStartTimer(): void {
@@ -930,6 +906,7 @@ export function setup(ctx: SpindleFrontendContext) {
       send({ type: 'threadverse:cancel_generation' })
       setGenerationPending(false)
       showError('Threadverse could not start the generation. Please try again.')
+      switchTab('make')
       renderContinuity()
       renderFeed()
     }, 15_000)
@@ -1278,7 +1255,6 @@ export function setup(ctx: SpindleFrontendContext) {
         .join(' - ')
     resetButton.disabled = operationPending || generationPending || !activeChat || rounds.length === 0
     updateSummary()
-    renderGenerationProgress()
   }
 
   function avatarHue(username: string): number {
@@ -1501,12 +1477,40 @@ export function setup(ctx: SpindleFrontendContext) {
     return navigation
   }
 
+  function appendFeedGenerationStatus(): void {
+    const status = document.createElement('div')
+    status.className = 'threadverse-card threadverse-feed-generation-status'
+    status.setAttribute('role', 'status')
+    status.setAttribute('aria-live', 'polite')
+    const tokenStatus = document.createElement('span')
+    tokenStatus.className = 'threadverse-generation-token-status'
+    const tokenCount = document.createElement('span')
+    tokenCount.dataset.feedGenerationTokenCount = ''
+    updateGenerationTokenText(tokenCount)
+    tokenStatus.append(tokenCount, createWaveDots())
+    status.appendChild(tokenStatus)
+    if (generationCancellable) {
+      const cancel = document.createElement('button')
+      cancel.type = 'button'
+      cancel.className = 'threadverse-button'
+      cancel.dataset.action = 'cancel-generation'
+      cancel.textContent = 'Cancel'
+      status.appendChild(cancel)
+    }
+    feedList.appendChild(status)
+  }
+
   function renderFeed(): void {
     feedRoundHandle?.destroy()
     feedRoundHandle = null
     cancelWaveDots(feedList)
     feedList.replaceChildren()
+    const isGeneratingNewRound = generationPending
+      && generationOperation === 'generate'
+      && generationChatId === activeChat?.id
+    if (isGeneratingNewRound) appendFeedGenerationStatus()
     if (feeds.length === 0) {
+      if (isGeneratingNewRound) return
       const empty = document.createElement('div')
       empty.className = 'threadverse-card threadverse-empty'
       empty.textContent = 'Generated fandom threads will appear here without being added to your roleplay chat.'
@@ -1565,25 +1569,7 @@ export function setup(ctx: SpindleFrontendContext) {
       && generationOperation === 'regenerate'
       && generationChatId === activeChat?.id
       && generationRoundId === round.id
-    if (isRegeneratingRound) {
-      const status = document.createElement('div')
-      status.className = 'threadverse-card threadverse-feed-generation-status'
-      status.setAttribute('role', 'status')
-      status.setAttribute('aria-live', 'polite')
-      const tokenStatus = document.createElement('span')
-      tokenStatus.className = 'threadverse-generation-token-status'
-      const tokenCount = document.createElement('span')
-      tokenCount.dataset.feedGenerationTokenCount = ''
-      updateGenerationTokenText(tokenCount)
-      tokenStatus.append(tokenCount, createWaveDots())
-      status.appendChild(tokenStatus)
-      if (generationCancellable) {
-        const cancel = document.createElement('button')
-        cancel.type = 'button'; cancel.className = 'threadverse-button'; cancel.dataset.action = 'cancel-generation'; cancel.textContent = 'Cancel'
-        status.appendChild(cancel)
-      }
-      feedList.appendChild(status)
-    }
+    if (isRegeneratingRound) appendFeedGenerationStatus()
 
     if (!selectedVersion) {
       const empty = document.createElement('div')
@@ -1740,6 +1726,8 @@ export function setup(ctx: SpindleFrontendContext) {
     armGenerationStartTimer()
     clearError()
     renderContinuity()
+    switchTab('feed')
+    renderFeed()
     send({
       type: 'threadverse:generate_thread',
       chatId: activeChat.id,
@@ -1917,7 +1905,6 @@ export function setup(ctx: SpindleFrontendContext) {
       if (message.status === 'progress') {
         if (generationPending && generationChatId === message.chatId) {
           generationOutputTokens = message.outputTokens ?? generationOutputTokens
-          renderGenerationProgress()
           renderFeedGenerationProgress()
         }
         return
