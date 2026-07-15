@@ -531,7 +531,7 @@ describe('Threadverse continuity', () => {
     expect(feed.comments[0]).not.toHaveProperty('id')
   })
 
-  test('parses and serializes the compact feed shape without empty replies', () => {
+  test('serializes compact fandom continuity text with scores in reading order', () => {
     const feed = parseThreadverseFeed(JSON.stringify({
       title: 'Discussion',
       post: { username: 'OP', body: 'Opening', score: 10 },
@@ -543,8 +543,10 @@ describe('Threadverse continuity', () => {
       ],
     }))
     const serialized = serializeFeedForContinuity(feed)
-    expect(serialized).toBe('{"title":"Discussion","post":{"username":"OP","body":"Opening","score":10},"comments":[{"username":"root","body":"Root","score":5},{"username":"parent","body":"Parent","score":4,"replies":[{"username":"reply","body":"Reply","score":2}]}]}')
-    expect(serialized).not.toContain('replies":[]')
+    expect(serialized).toBe(
+      'Discussion\n\nOP [10]:\nOpening\n\nroot [5]:\nRoot\n\nparent [4]:\nParent\n\nreply [2]:\nReply',
+    )
+    expect(serialized).not.toContain('"username"')
   })
 
   test('serializes a feed as clean text in reading order', () => {

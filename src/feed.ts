@@ -84,26 +84,20 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
 }
 
 export function serializeFeedForContinuity(feed: ThreadverseFeed): string {
-  const serializeComment = (comment: ThreadverseComment): JsonObject => {
-    const serialized: JsonObject = {
-      username: comment.username,
-      body: comment.body,
-      score: comment.score,
+  const comments: string[] = []
+  const appendComments = (items: ThreadverseComment[]): void => {
+    for (const comment of items) {
+      comments.push(`${comment.username} [${comment.score}]:\n${comment.body}`)
+      appendComments(comment.replies)
     }
-    if (comment.replies.length > 0) {
-      serialized.replies = comment.replies.map(serializeComment)
-    }
-    return serialized
   }
-  return JSON.stringify({
-    title: feed.title,
-    post: {
-      username: feed.post.username,
-      body: feed.post.body,
-      score: feed.post.score,
-    },
-    comments: feed.comments.map(serializeComment),
-  })
+  appendComments(feed.comments)
+
+  return [
+    feed.title,
+    `${feed.post.username} [${feed.post.score}]:\n${feed.post.body}`,
+    ...comments,
+  ].join('\n\n')
 }
 
 export function serializeFeedAsPlainText(feed: ThreadverseFeed): string {
