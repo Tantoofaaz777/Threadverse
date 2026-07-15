@@ -731,6 +731,13 @@ export function setup(ctx: SpindleFrontendContext) {
             <button class="threadverse-button threadverse-button--primary" type="button" data-action="save-prompt">Save Prompt</button>
           </div>
         </section>
+
+        <section class="threadverse-card threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Fandom Notes</h3>
+          <div class="threadverse-settings-field">
+            <div data-setting="fandom-notes"></div>
+          </div>
+        </section>
       </div>
     </section>
   `
@@ -771,6 +778,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let generationOutputTokens = 0
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let fandomNotesSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let generationStartTimer: ReturnType<typeof setTimeout> | null = null
   let latestChatRequestId = 0
@@ -780,6 +788,11 @@ export function setup(ctx: SpindleFrontendContext) {
   let fandomThreadsHandle: SpindleNumericInputHandle | null = null
   let instructionPresetHandle: SpindleSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
+  let fandomNotesHandle: SpindleTextAreaHandle | null = null
+  let fandomNotesDraftChatId: string | null = null
+  let fandomNotesDraft = ''
+  let pendingFandomNotesSave: { chatId: string; chatName: string; notes: string } | null = null
+  const submittedFandomNotesSaves = new Map<string, string>()
   let settingsComponents: Array<{ destroy(): void }> = []
   const waveAnimations = new WeakMap<HTMLElement, Animation[]>()
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -978,6 +991,49 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function applyFeedFontScale(value: number): void {
     feedList.style.setProperty('--threadverse-feed-font-scale', String(value / 100))
+  }
+
+  function flushFandomNotesSave(): void {
+    if (fandomNotesSaveTimer) clearTimeout(fandomNotesSaveTimer)
+    fandomNotesSaveTimer = null
+    const pending = pendingFandomNotesSave
+    if (!pending) return
+    pendingFandomNotesSave = null
+    submittedFandomNotesSaves.set(pending.chatId, pending.notes)
+    send({ type: 'threadverse:save_fandom_notes', ...pending })
+  }
+
+  function scheduleFandomNotesSave(chatId: string, chatName: string, notes: string): void {
+    pendingFandomNotesSave = { chatId, chatName, notes }
+    if (fandomNotesSaveTimer) clearTimeout(fandomNotesSaveTimer)
+    fandomNotesSaveTimer = setTimeout(flushFandomNotesSave, 350)
+  }
+
+  function mountFandomNotesEditor(): void {
+    fandomNotesHandle?.destroy()
+    fandomNotesHandle = ctx.components.mountTextArea(settingTarget('fandom-notes'), {
+      value: fandomNotesDraft,
+      rows: 8,
+      placeholder: activeChat ? 'Fandom notes...' : 'Open a roleplay chat to add notes.',
+      disabled: !activeChat,
+      ariaLabel: 'Fandom notes for the active chat',
+      className: 'threadverse-secondary-input',
+      onChange: (notes) => {
+        const chat = activeChat
+        if (!chat || fandomNotesDraftChatId !== chat.id) return
+        fandomNotesDraft = notes
+        scheduleFandomNotesSave(chat.id, chat.name, notes)
+      },
+    })
+  }
+
+  function discardPendingFandomNotes(chatId: string): void {
+    if (pendingFandomNotesSave?.chatId === chatId) pendingFandomNotesSave = null
+    submittedFandomNotesSaves.delete(chatId)
+    if (!pendingFandomNotesSave && fandomNotesSaveTimer) {
+      clearTimeout(fandomNotesSaveTimer)
+      fandomNotesSaveTimer = null
+    }
   }
 
   function mountSettingsForm(
@@ -1765,6 +1821,7 @@ export function setup(ctx: SpindleFrontendContext) {
       chatId: activeChat.id,
       startMessageId: messages[bounds[0]].id,
       endMessageId: messages[bounds[1]].id,
+      fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
     })
   }
 
@@ -1775,7 +1832,12 @@ export function setup(ctx: SpindleFrontendContext) {
     })
     armGenerationStartTimer()
     renderFeed()
-    send({ type: 'threadverse:regenerate_thread', chatId: activeChat.id, roundId })
+    send({
+      type: 'threadverse:regenerate_thread',
+      chatId: activeChat.id,
+      roundId,
+      fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
+    })
   }
 
   function showVersionDeleteChoice(round: FeedRound): Promise<'cancel' | 'version' | 'round'> {
@@ -1887,7 +1949,7 @@ export function setup(ctx: SpindleFrontendContext) {
     try {
       const result = await ctx.ui.showConfirm({
         title: 'Reset continuity',
-        message: `Reset Threadverse continuity for "${chatLabel}"? This permanently deletes ${roundCount} saved round${roundCount === 1 ? '' : 's'} and every generated version.`,
+        message: `Reset Threadverse continuity for "${chatLabel}"? This permanently deletes ${roundCount} saved round${roundCount === 1 ? '' : 's'}, every generated version, and the fandom notes.`,
         variant: 'danger',
         confirmLabel: 'Reset',
       })
@@ -1902,6 +1964,9 @@ export function setup(ctx: SpindleFrontendContext) {
       renderFeed()
       return
     }
+    discardPendingFandomNotes(chatId)
+    fandomNotesDraft = ''
+    fandomNotesHandle?.update({ value: '' })
     send({ type: 'threadverse:reset_continuity', chatId })
   }
 
@@ -1941,6 +2006,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const flushPendingAutomaticSave = () => {
     if (autoSaveTimer) flushAutomaticSave()
+    if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
   }
 
   const flushWhenHidden = () => {
@@ -2009,6 +2075,27 @@ export function setup(ctx: SpindleFrontendContext) {
       return
     }
 
+    if (message.type === 'threadverse:fandom_notes_save_result') {
+      if (
+        !message.error
+        && submittedFandomNotesSaves.get(message.chatId) === message.notes
+      ) {
+        submittedFandomNotesSaves.delete(message.chatId)
+      }
+      if (
+        message.error
+        && fandomNotesDraftChatId === message.chatId
+        && fandomNotesDraft === message.notes
+      ) {
+        pendingFandomNotesSave = {
+          chatId: message.chatId,
+          chatName: activeChat?.id === message.chatId ? activeChat.name : '',
+          notes: message.notes,
+        }
+      }
+      return
+    }
+
     if (message.type === 'threadverse:instruction_preset_name') {
       if (!message.name || !settingsDraft) {
         return
@@ -2041,9 +2128,22 @@ export function setup(ctx: SpindleFrontendContext) {
     if (message.type === 'threadverse:active_chat') {
       if (!shouldAcceptActiveChatResponse(message.requestId, latestChatRequestId)) return
       if (message.requestId === undefined) latestChatRequestId += 1
+      if (pendingFandomNotesSave && pendingFandomNotesSave.chatId !== message.chat?.id) {
+        flushFandomNotesSave()
+      }
       const previousStartId = startIndex === null ? null : messages[startIndex]?.id
       const previousEndId = endIndex === null ? null : messages[endIndex]?.id
       activeChat = message.chat
+      const chatId = message.chat?.id ?? null
+      const submittedNotes = chatId ? submittedFandomNotesSaves.get(chatId) : undefined
+      const localNotes = pendingFandomNotesSave?.chatId === chatId
+        ? pendingFandomNotesSave.notes
+        : submittedNotes !== undefined
+          ? submittedNotes
+          : message.fandomNotes ?? ''
+      fandomNotesDraftChatId = chatId
+      fandomNotesDraft = localNotes
+      mountFandomNotesEditor()
       messages = message.messages
       rounds = message.rounds
       feeds = message.feedRounds
@@ -2085,6 +2185,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   return () => {
     if (autoSaveTimer) flushAutomaticSave()
+    if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
     clearGenerationStartTimer()
     unsubscribeActivate()
@@ -2100,6 +2201,7 @@ export function setup(ctx: SpindleFrontendContext) {
     window.removeEventListener('pagehide', flushPendingAutomaticSave)
     document.removeEventListener('visibilitychange', flushWhenHidden)
     destroySettingsComponents()
+    fandomNotesHandle?.destroy()
     cancelWaveAnimations(shell)
     drawer.destroy()
     removeStyle()

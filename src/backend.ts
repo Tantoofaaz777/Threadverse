@@ -218,13 +218,13 @@ async function sendActiveChat(
   requestId?: number,
 ): Promise<void> {
   if (!hasChatPermissions()) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], requestId, error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', requestId, error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
     return
   }
   const activeChat = await spindle.chats.getActive(userId)
   if (expectedChatId && activeChat?.id !== expectedChatId) return
   if (!activeChat) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
     return
   }
   const [rawMessages, store] = await Promise.all([spindle.chat.getMessages(activeChat.id), loadStore(userId)])
@@ -233,6 +233,7 @@ async function sendActiveChat(
     type: 'threadverse:active_chat', chat: { id: activeChat.id, name: activeChat.name },
     messages: rawMessages.map((message, index) => ({ id: message.id, index: index + 1, role: message.role, content: message.content })),
     rounds: summarizeRounds(continuity?.rounds ?? []), feedRounds: feedRounds(continuity?.rounds ?? []),
+    fandomNotes: continuity?.fandomNotes ?? '',
     requestId, error: options?.error, notice: options?.notice,
   }, userId)
 }
@@ -248,7 +249,13 @@ function generationContent(result: unknown): string {
   return content
 }
 
-function promptForRound(store: ThreadverseStore, chatId: string, recent: ChatMessageSummary[], cutoff: number): string {
+function promptForRound(
+  store: ThreadverseStore,
+  chatId: string,
+  recent: ChatMessageSummary[],
+  cutoff: number,
+  fandomNotesOverride?: string,
+): string {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
   const previous = limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
@@ -264,6 +271,7 @@ function promptForRound(store: ThreadverseStore, chatId: string, recent: ChatMes
     previousRanges: previous.map((round) => ({ label: `ROUND ${round.sequence}`, content: formatMessages(round.messages) })),
     recentRange: { label: 'CURRENT RANGE', content: formatMessages(recent) },
     fandomContinuity: fandom.map(({ round, feed }) => ({ label: `FANDOM THREAD ${round.sequence}`, content: serializeFeedForContinuity(feed) })),
+    fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
     instructions: preset.instructions,
   })
 }
@@ -277,6 +285,7 @@ async function runGeneration(
   operation: 'generate' | 'regenerate',
   active: ActiveGeneration,
   roundId?: string,
+  fandomNotesOverride?: string,
 ) {
   const connections = await getConnections(userId)
   throwIfAborted(active)
@@ -287,7 +296,10 @@ async function runGeneration(
   const samplers = resolveSamplers(store.settings)
   const stream = spindle.generate.quietStream({
     type: 'quiet', userId, connection_id: connectionId,
-    messages: [{ role: 'user', content: promptForRound(store, chatId, recent, cutoff) }],
+    messages: [{
+      role: 'user',
+      content: promptForRound(store, chatId, recent, cutoff, fandomNotesOverride),
+    }],
     parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
     signal: active.controller.signal,
   })
@@ -392,7 +404,17 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     const existing = store.chats[selection.chat.id]?.rounds ?? []
     const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
     if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
-    const feed = await runGeneration(store, selection.chat.id, selection.messages, existing.length, userId, 'generate', active)
+    const feed = await runGeneration(
+      store,
+      selection.chat.id,
+      selection.messages,
+      existing.length,
+      userId,
+      'generate',
+      active,
+      undefined,
+      payload.fandomNotes,
+    )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
     const round: StoredRound = {
@@ -406,7 +428,12 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       throwIfAborted(active)
       const latest = await loadStore(userId)
       throwIfAborted(active)
-      const continuity = latest.chats[selection.chat.id] ?? { chatId: selection.chat.id, chatName: selection.chat.name, rounds: [] }
+      const continuity = latest.chats[selection.chat.id] ?? {
+        chatId: selection.chat.id,
+        chatName: selection.chat.name,
+        fandomNotes: '',
+        rounds: [],
+      }
       const latestUsed = new Set(continuity.rounds.flatMap((item) => item.messages.map((message) => message.id)))
       if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('This range was added to continuity while generation was running.')
       round.sequence = continuity.rounds.length + 1
@@ -425,7 +452,12 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
   }
 }
 
-async function regenerateThread(chatId: string, roundId: string, userId: string): Promise<void> {
+async function regenerateThread(
+  chatId: string,
+  roundId: string,
+  fandomNotes: string | undefined,
+  userId: string,
+): Promise<void> {
   const active = beginGeneration(userId, chatId, 'regenerate', roundId)
   try {
     const store = await loadStore(userId)
@@ -434,7 +466,17 @@ async function regenerateThread(chatId: string, roundId: string, userId: string)
     const index = continuity?.rounds.findIndex((round) => round.id === roundId) ?? -1
     if (!continuity || index < 0) throw new Error('That continuity round no longer exists.')
     const round = continuity.rounds[index]
-    const feed = await runGeneration(store, chatId, round.messages, index, userId, 'regenerate', active, roundId)
+    const feed = await runGeneration(
+      store,
+      chatId,
+      round.messages,
+      index,
+      userId,
+      'regenerate',
+      active,
+      roundId,
+      fandomNotes,
+    )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
     await queueStoreWrite(userId, async () => {
@@ -501,7 +543,7 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
     deletedSequence = continuity.rounds[index].sequence
     continuity.rounds.splice(index, 1)
     continuity.rounds.forEach((round, roundIndex) => { round.sequence = roundIndex + 1 })
-    if (continuity.rounds.length === 0) delete store.chats[chatId]
+    if (continuity.rounds.length === 0 && !continuity.fandomNotes.trim()) delete store.chats[chatId]
     await saveStore(store, userId)
   })
   await finishSuccessfulMutation(
@@ -520,6 +562,27 @@ async function resetContinuity(chatId: string, userId: string): Promise<void> {
   await finishSuccessfulMutation('reset_continuity', chatId, 'Continuity reset for this chat.', userId)
 }
 
+async function saveFandomNotes(
+  chatId: string,
+  chatName: string,
+  notes: string,
+  userId: string,
+): Promise<void> {
+  if (!chatId || typeof chatName !== 'string' || typeof notes !== 'string') {
+    throw new Error('Invalid fandom notes payload.')
+  }
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const continuity = store.chats[chatId] ?? { chatId, chatName, fandomNotes: '', rounds: [] }
+    continuity.chatName = chatName || continuity.chatName
+    continuity.fandomNotes = notes
+    if (continuity.rounds.length === 0 && !notes.trim()) delete store.chats[chatId]
+    else store.chats[chatId] = continuity
+    await saveStore(store, userId)
+  })
+  send({ type: 'threadverse:fandom_notes_save_result', chatId, notes }, userId)
+}
+
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   if (!isFrontendMessage(payload)) return
   try {
@@ -530,6 +593,10 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     if (payload.type === 'threadverse:load_settings') { await sendSettingsState(userId); return }
     if (payload.type === 'threadverse:auto_save_settings') { await saveAutomaticSettings(payload.settings, userId); return }
     if (payload.type === 'threadverse:save_prompt') { await savePromptSettings(payload.settings, userId); return }
+    if (payload.type === 'threadverse:save_fandom_notes') {
+      await saveFandomNotes(payload.chatId, payload.chatName, payload.notes, userId)
+      return
+    }
     if (payload.type === 'threadverse:request_instruction_preset_name') {
       const result = await spindle.prompt.input({ title: 'New instruction preset', message: 'Save the current instructions as a new preset.', placeholder: 'Preset name...', submitLabel: 'Create', userId })
       const name = result.cancelled || !result.value ? null : result.value.trim()
@@ -543,7 +610,10 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       send({ type: 'threadverse:instruction_editor_result', presetId: payload.presetId, text: result.text, cancelled: result.cancelled }, userId); return
     }
     if (payload.type === 'threadverse:generate_thread') { await generateThread(payload, userId); return }
-    if (payload.type === 'threadverse:regenerate_thread') { await regenerateThread(payload.chatId, payload.roundId, userId); return }
+    if (payload.type === 'threadverse:regenerate_thread') {
+      await regenerateThread(payload.chatId, payload.roundId, payload.fandomNotes, userId)
+      return
+    }
     if (payload.type === 'threadverse:select_feed_version') { await selectRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
     if (payload.type === 'threadverse:delete_feed_version') { await deleteRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
     if (payload.type === 'threadverse:delete_round') { await deleteRound(payload.chatId, payload.roundId, userId); return }
@@ -568,6 +638,16 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     if (payload.type === 'threadverse:auto_save_settings' || payload.type === 'threadverse:save_prompt') {
       const scope = payload.type === 'threadverse:save_prompt' ? 'prompt' : 'automatic'; spindle.toast.error(message, { userId }); send({ type: 'threadverse:settings_save_result', scope, error: message }, userId); return
+    }
+    if (payload.type === 'threadverse:save_fandom_notes') {
+      spindle.toast.error(message, { userId })
+      send({
+        type: 'threadverse:fandom_notes_save_result',
+        chatId: payload.chatId,
+        notes: payload.notes,
+        error: message,
+      }, userId)
+      return
     }
     if (payload.type === 'threadverse:generate_thread' || payload.type === 'threadverse:regenerate_thread') {
       const cancelled = error instanceof Error && error.name === 'AbortError'

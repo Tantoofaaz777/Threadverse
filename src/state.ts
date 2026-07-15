@@ -30,6 +30,7 @@ export interface StoredRound extends Omit<RoundSummary, 'messageIds'> {
 export interface ChatContinuity {
   chatId: string
   chatName: string
+  fandomNotes: string
   rounds: StoredRound[]
 }
 
@@ -232,13 +233,17 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
   const chats: Record<string, ChatContinuity> = Object.create(null) as Record<string, ChatContinuity>
   for (const [chatKey, rawChat] of Object.entries(value)) {
     if (!isRecord(rawChat) || !Array.isArray(rawChat.rounds)) continue
+    const existingChatId = typeof rawChat.chatId === 'string' && rawChat.chatId ? rawChat.chatId : chatKey
+    const existing = existingChatId ? chats[existingChatId] : undefined
+    const fandomNotes = typeof rawChat.fandomNotes === 'string'
+      ? rawChat.fandomNotes
+      : existing?.fandomNotes ?? ''
     const recoveredRounds = rawChat.rounds
       .map((round, index) => normalizeStoredRound(round, index + 1))
       .filter((round): round is StoredRound => Boolean(round))
-    if (recoveredRounds.length === 0) continue
-    const chatId = typeof rawChat.chatId === 'string' && rawChat.chatId ? rawChat.chatId : chatKey
+    if (recoveredRounds.length === 0 && !fandomNotes.trim()) continue
+    const chatId = existingChatId
     if (!chatId) continue
-    const existing = chats[chatId]
     const rounds = existing ? [...existing.rounds, ...recoveredRounds] : recoveredRounds
     const usedRoundIds = new Set<string>()
     const uniqueRounds = rounds.map((round, index) => {
@@ -256,6 +261,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
       chatName: typeof rawChat.chatName === 'string'
         ? rawChat.chatName
         : existing?.chatName ?? 'Untitled chat',
+      fandomNotes,
       rounds: uniqueRounds,
     }
   }

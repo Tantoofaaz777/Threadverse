@@ -12,6 +12,7 @@ export interface ThreadversePromptInput {
   previousRanges: StoryRange[]
   recentRange: StoryRange
   fandomContinuity: FandomThread[]
+  fandomNotes?: string
   instructions: string
 }
 
@@ -24,6 +25,7 @@ function renderBlocks<T extends { label: string; content: string }>(items: T[]):
 }
 
 export function buildThreadversePrompt(input: ThreadversePromptInput): string {
+  const fandomNotes = input.fandomNotes?.trim() ?? ''
   return [
     '>>> PREVIOUS CONTEXT <<<',
     renderBlocks(input.previousRanges),
@@ -31,6 +33,7 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
     renderBlocks([input.recentRange]),
     '>>> FANDOM CONTINUITY <<<',
     renderBlocks(input.fandomContinuity),
+    ...(fandomNotes ? ['>>> FANDOM NOTES <<<', fandomNotes] : []),
     '>>> INSTRUCTIONS <<<',
     input.instructions.trim(),
     '>>> OUTPUT FORMAT <<<',

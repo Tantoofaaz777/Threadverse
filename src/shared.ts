@@ -99,6 +99,7 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:load_settings' }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
   | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
+  | { type: 'threadverse:save_fandom_notes'; chatId: string; chatName: string; notes: string }
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
@@ -106,8 +107,9 @@ export type FrontendToBackendMessage =
       chatId: string
       startMessageId: string
       endMessageId: string
+      fandomNotes?: string
     }
-  | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string }
+  | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string; fandomNotes?: string }
   | { type: 'threadverse:select_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_round'; chatId: string; roundId: string }
@@ -122,6 +124,7 @@ export type BackendToFrontendMessage =
       messages: ChatMessageSummary[]
       rounds: RoundSummary[]
       feedRounds: FeedRound[]
+      fandomNotes: string
       requestId?: number
       error?: string
       notice?: string
@@ -149,6 +152,7 @@ export type BackendToFrontendMessage =
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
   | { type: 'threadverse:settings_save_result'; scope: 'automatic' | 'prompt'; error?: string }
+  | { type: 'threadverse:fandom_notes_save_result'; chatId: string; notes: string; error?: string }
   | {
       type: 'threadverse:instruction_editor_result'
       presetId: string
@@ -163,6 +167,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:load_settings'
     || type === 'threadverse:auto_save_settings'
     || type === 'threadverse:save_prompt'
+    || type === 'threadverse:save_fandom_notes'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:generate_thread'

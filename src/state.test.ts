@@ -49,8 +49,11 @@ describe('Threadverse continuity', () => {
     expect(shouldAcceptActiveChatResponse(undefined, 5)).toBe(true)
   })
 
-  test('accepts clipboard and feed-version frontend messages', () => {
+  test('accepts clipboard, fandom-note, and feed-version frontend messages', () => {
     expect(isFrontendMessage({ type: 'threadverse:copy_result', success: true })).toBe(true)
+    expect(isFrontendMessage({
+      type: 'threadverse:save_fandom_notes', chatId: 'chat', chatName: 'RP', notes: 'Remember this.',
+    })).toBe(true)
     expect(isFrontendMessage({
       type: 'threadverse:select_feed_version', chatId: 'chat', roundId: 'round', versionId: 'version',
     })).toBe(true)
@@ -123,6 +126,7 @@ describe('Threadverse continuity', () => {
     expect(store.settings.feedFontScale).toBe(DEFAULT_FEED_FONT_SCALE)
     expect(Object.keys(store.chats)).toEqual(['good'])
     expect(store.chats.good.rounds).toHaveLength(1)
+    expect(store.chats.good.fandomNotes).toBe('')
     expect(store.chats.good.rounds[0]).toMatchObject({
       sequence: 1,
       startMessageId: 'm1',
@@ -133,6 +137,26 @@ describe('Threadverse continuity', () => {
       feedVersions: [],
       activeFeedVersionId: null,
     })
+  })
+
+  test('preserves note-only chats and migrates missing fandom notes to empty text', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {
+        notes: { chatName: 'Notes only', fandomNotes: 'The fandom distrusts Morgan.', rounds: [] },
+        legacy: { chatName: 'Legacy', rounds: [{ messages: [storedMessage('m1', 1)] }] },
+        empty: { chatName: 'Empty', fandomNotes: '   ', rounds: [] },
+      },
+    })
+
+    expect(store.chats.notes).toMatchObject({
+      chatId: 'notes',
+      chatName: 'Notes only',
+      fandomNotes: 'The fandom distrusts Morgan.',
+      rounds: [],
+    })
+    expect(store.chats.legacy.fandomNotes).toBe('')
+    expect(store.chats.empty).toBeUndefined()
   })
 
   test('migrates a legacy feed into the first active version', () => {
@@ -360,12 +384,34 @@ describe('Threadverse continuity', () => {
         { label: 'THREAD A', content: 'TA' },
         { label: 'THREAD B', content: 'TB' },
       ],
+      fandomNotes: 'Remember the running joke.',
       instructions: 'Instructions',
     })
 
-    const markers = ['RANGE A', 'RANGE B', 'RANGE C', 'THREAD A', 'THREAD B', 'INSTRUCTIONS']
+    const markers = [
+      'RANGE A',
+      'RANGE B',
+      'RANGE C',
+      'THREAD A',
+      'THREAD B',
+      'FANDOM NOTES',
+      'Remember the running joke.',
+      'INSTRUCTIONS',
+    ]
     const positions = markers.map((marker) => prompt.indexOf(marker))
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
+  })
+
+  test('omits the fandom notes block completely when notes are empty', () => {
+    const prompt = buildThreadversePrompt({
+      previousRanges: [],
+      recentRange: { label: 'CURRENT RANGE', content: 'Story' },
+      fandomContinuity: [],
+      fandomNotes: '   ',
+      instructions: 'Discuss the story.',
+    })
+
+    expect(prompt).not.toContain('>>> FANDOM NOTES <<<')
   })
 
   test('asks the model for only the compact feed fields', () => {
