@@ -13,7 +13,7 @@ import {
   type ThreadversePromptSettings,
 } from './shared'
 import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
-import { buildThreadversePrompt } from './prompt'
+import { buildThreadversePrompt, groupConsecutiveStoryRanges } from './prompt'
 import {
   DEFAULT_INSTRUCTIONS,
   activeFeedVersion,
@@ -255,6 +255,7 @@ function promptForRound(
   chatId: string,
   recent: ChatMessageSummary[],
   cutoff: number,
+  installmentLabel: string,
   fandomNotesOverride?: string,
 ): string {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
@@ -269,9 +270,15 @@ function promptForRound(
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
   return buildThreadversePrompt({
-    previousRanges: previous.map((round) => ({ label: `ROUND ${round.sequence}`, content: formatMessages(round.messages) })),
-    recentRange: { label: 'CURRENT RANGE', content: formatMessages(recent) },
-    fandomContinuity: fandom.map(({ round, feed }) => ({ label: `FANDOM THREAD ${round.sequence}`, content: serializeFeedForContinuity(feed) })),
+    previousRanges: groupConsecutiveStoryRanges(previous.map((round) => ({
+      label: round.installmentLabel || `ROUND ${round.sequence}`,
+      content: formatMessages(round.messages),
+    }))),
+    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: formatMessages(recent) },
+    fandomContinuity: fandom.map(({ round, feed }) => ({
+      label: `FANDOM THREAD ${round.sequence}${round.installmentLabel ? ` — ${round.installmentLabel}` : ''}`,
+      content: serializeFeedForContinuity(feed),
+    })),
     fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
     instructions: preset.instructions,
   })
@@ -287,6 +294,7 @@ async function runGeneration(
   active: ActiveGeneration,
   roundId?: string,
   fandomNotesOverride?: string,
+  installmentLabel = '',
 ) {
   const connections = await getConnections(userId)
   throwIfAborted(active)
@@ -299,7 +307,7 @@ async function runGeneration(
     type: 'quiet', userId, connection_id: connectionId,
     messages: [{
       role: 'user',
-      content: promptForRound(store, chatId, recent, cutoff, fandomNotesOverride),
+      content: promptForRound(store, chatId, recent, cutoff, installmentLabel, fandomNotesOverride),
     }],
     parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
     signal: active.controller.signal,
@@ -403,6 +411,9 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     const store = await loadStore(userId)
     throwIfAborted(active)
     const existing = store.chats[selection.chat.id]?.rounds ?? []
+    const installmentLabel = typeof payload.installmentLabel === 'string'
+      ? payload.installmentLabel.trim()
+      : ''
     const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
     if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
     const feed = await runGeneration(
@@ -415,11 +426,13 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       active,
       undefined,
       payload.fandomNotes,
+      installmentLabel,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
     const round: StoredRound = {
       id: crypto.randomUUID(), sequence: existing.length + 1, createdAt: new Date().toISOString(),
+      installmentLabel,
       startMessageId: selection.messages[0].id, endMessageId: selection.messages.at(-1)!.id,
       startIndex: selection.messages[0].index, endIndex: selection.messages.at(-1)!.index,
       messageCount: selection.messages.length, messages: selection.messages,
@@ -477,6 +490,7 @@ async function regenerateThread(
       active,
       roundId,
       fandomNotes,
+      round.installmentLabel,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)

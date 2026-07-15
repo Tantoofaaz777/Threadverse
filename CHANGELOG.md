@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- Add an optional Title / episode / chapter field that appears after a complete Make range is selected.
+- Persist the free-form label with its round, reuse it for regeneration, and show it in Make continuity and the Feed round selector.
+- Use labels literally as Recent Context separators and group consecutive labeled ranges under one chronological Previous Context heading.
+- Add installment metadata to corresponding Fandom Continuity thread headings while preserving `ROUND N` fallbacks for existing unlabeled history.
+
 ## 1.2.3
 
 - Add a Rename button beside the instruction preset selector.

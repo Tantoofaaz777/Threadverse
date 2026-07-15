@@ -21,7 +21,20 @@ function renderBlocks<T extends { label: string; content: string }>(items: T[]):
 
   return items
     .map((item) => `--- ${item.label} ---\n${item.content.trim()}`)
-    .join('\n\n')
+    .join('\n\n---\n\n')
+}
+
+export function groupConsecutiveStoryRanges(items: StoryRange[]): StoryRange[] {
+  const grouped: StoryRange[] = []
+  for (const item of items) {
+    const previous = grouped.at(-1)
+    if (previous?.label === item.label) {
+      previous.content = `${previous.content.trim()}\n\n${item.content.trim()}`
+    } else {
+      grouped.push({ ...item })
+    }
+  }
+  return grouped
 }
 
 export function buildThreadversePrompt(input: ThreadversePromptInput): string {

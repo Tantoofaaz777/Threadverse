@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { buildThreadversePrompt } from './prompt'
+import { buildThreadversePrompt, groupConsecutiveStoryRanges } from './prompt'
 import { parseThreadverseFeed, serializeFeedAsPlainText, serializeFeedForContinuity } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
@@ -63,6 +63,13 @@ describe('Threadverse continuity', () => {
       presetId: 'preset',
       currentName: 'Old name',
       existingNames: ['Other preset'],
+    })).toBe(true)
+    expect(isFrontendMessage({
+      type: 'threadverse:generate_thread',
+      chatId: 'chat',
+      startMessageId: 'm1',
+      endMessageId: 'm2',
+      installmentLabel: 'ZETA — S01E03',
     })).toBe(true)
     expect(isFrontendMessage({
       type: 'threadverse:select_feed_version', chatId: 'chat', roundId: 'round', versionId: 'version',
@@ -139,6 +146,7 @@ describe('Threadverse continuity', () => {
     expect(store.chats.good.fandomNotes).toBe('')
     expect(store.chats.good.rounds[0]).toMatchObject({
       sequence: 1,
+      installmentLabel: '',
       startMessageId: 'm1',
       endMessageId: 'm1',
       startIndex: 4,
@@ -206,6 +214,7 @@ describe('Threadverse continuity', () => {
           rounds: [{
             id: 'round-1',
             createdAt: '2026-01-01T00:00:00.000Z',
+            installmentLabel: 'ZETA — S01E03',
             messages: [storedMessage('m1', 1)],
             feed: storedFeed('Legacy thread'),
           }],
@@ -221,6 +230,7 @@ describe('Threadverse continuity', () => {
       feed: { title: 'Legacy thread' },
     })
     expect(round.activeFeedVersionId).toBe('round-1-feed-1')
+    expect(round.installmentLabel).toBe('ZETA — S01E03')
   })
 
   test('selects and removes feed versions while preserving an adjacent active version', () => {
@@ -439,6 +449,32 @@ describe('Threadverse continuity', () => {
     ]
     const positions = markers.map((marker) => prompt.indexOf(marker))
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
+  })
+
+  test('groups consecutive ranges under their literal installment label', () => {
+    const grouped = groupConsecutiveStoryRanges([
+      { label: 'ZETA — S01E03', content: 'Scene A' },
+      { label: 'ZETA — S01E03', content: 'Scene B' },
+      { label: 'ZETA — S01E04', content: 'Scene C' },
+      { label: 'ZETA — S01E03', content: 'Scene D' },
+    ])
+
+    expect(grouped).toEqual([
+      { label: 'ZETA — S01E03', content: 'Scene A\n\nScene B' },
+      { label: 'ZETA — S01E04', content: 'Scene C' },
+      { label: 'ZETA — S01E03', content: 'Scene D' },
+    ])
+
+    const prompt = buildThreadversePrompt({
+      previousRanges: grouped.slice(0, 2),
+      recentRange: { label: 'ZETA — S01E05', content: 'Current scene' },
+      fandomContinuity: [],
+      instructions: 'Discuss it.',
+    })
+    expect(prompt).toContain(
+      '--- ZETA — S01E03 ---\nScene A\n\nScene B\n\n---\n\n--- ZETA — S01E04 ---\nScene C',
+    )
+    expect(prompt).toContain('>>> RECENT CONTEXT <<<\n\n--- ZETA — S01E05 ---\nCurrent scene')
   })
 
   test('omits the fandom notes block completely when notes are empty', () => {

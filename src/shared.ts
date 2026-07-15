@@ -15,6 +15,7 @@ export interface RoundSummary {
   id: string
   sequence: number
   createdAt: string
+  installmentLabel: string
   startMessageId: string
   endMessageId: string
   startIndex: number
@@ -120,6 +121,7 @@ export type FrontendToBackendMessage =
       startMessageId: string
       endMessageId: string
       fandomNotes?: string
+      installmentLabel?: string
     }
   | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string; fandomNotes?: string }
   | { type: 'threadverse:select_feed_version'; chatId: string; roundId: string; versionId: string }

@@ -11,6 +11,7 @@ The extension currently includes:
 - a Lumiverse drawer tab;
 - the `Feed`, `Make`, and `Settings` navigation shell;
 - active-chat message loading and success-themed range selection;
+- optional free-form title, episode, or chapter labels stored with each selected round;
 - per-user, per-chat chronological round persistence;
 - previous/recent context display and continuity reset controls that preserve Fandom Notes;
 - existing Lumiverse connection selection, using the model configured on that connection;
@@ -19,7 +20,7 @@ The extension currently includes:
 - named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
 - automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
-- a prompt builder for chronological story, fandom continuity, optional fandom notes, and instructions;
+- a prompt builder that groups consecutive story ranges by installment label before fandom continuity, optional fandom notes, and instructions;
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
 - immediately cancellable streamed generation with live estimated output-token progress and atomic round persistence;

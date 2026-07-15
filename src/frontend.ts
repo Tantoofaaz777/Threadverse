@@ -4,6 +4,7 @@ import type {
   SpindleNumericInputHandle,
   SpindleSelectHandle,
   SpindleTextAreaHandle,
+  SpindleTextInputHandle,
 } from 'lumiverse-spindle-types'
 import {
   DEFAULT_FEED_FONT_SCALE,
@@ -127,6 +128,14 @@ const STYLES = `
     gap: 8px;
     align-items: start;
   }
+
+  .threadverse-installment-field {
+    display: grid;
+    gap: 5px;
+    padding-top: 2px;
+  }
+
+  .threadverse-installment-field[hidden] { display: none; }
 
   .threadverse-context-label {
     color: var(--lumiverse-text-muted);
@@ -633,6 +642,10 @@ export function setup(ctx: SpindleFrontendContext) {
             <span class="threadverse-context-label">Recent context</span>
             <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
           </div>
+          <label class="threadverse-installment-field" data-installment-field hidden>
+            <span class="threadverse-context-label">Title / episode / chapter</span>
+            <div data-setting="installment-label"></div>
+          </label>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
         <div class="threadverse-toolbar">
@@ -765,6 +778,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
+  const installmentField = shell.querySelector<HTMLElement>('[data-installment-field]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
@@ -780,6 +794,8 @@ export function setup(ctx: SpindleFrontendContext) {
   let deleteChoiceModal: SpindleModalHandle | null = null
   let startIndex: number | null = null
   let endIndex: number | null = null
+  let installmentDraft = ''
+  let installmentLabelHandle: SpindleTextInputHandle | null = null
   let operationPending = false
   let generationPending = false
   let generationCancellable = false
@@ -984,6 +1000,20 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function settingTarget(name: string): HTMLElement {
     return shell.querySelector<HTMLElement>(`[data-setting="${name}"]`)!
+  }
+
+  installmentLabelHandle = ctx.components.mountTextInput(settingTarget('installment-label'), {
+    value: installmentDraft,
+    placeholder: 'ZETA — S01E03',
+    disabled: true,
+    ariaLabel: 'Title, episode, or chapter for the selected range',
+    className: 'threadverse-secondary-input',
+    onChange: (value) => { installmentDraft = value },
+  })
+
+  function clearInstallmentDraft(): void {
+    installmentDraft = ''
+    installmentLabelHandle?.update({ value: '' })
   }
 
   function destroySettingsComponents(): void {
@@ -1352,6 +1382,8 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function updateSummary(): void {
     const bounds = selectedBounds()
+    installmentField.hidden = !bounds
+    installmentLabelHandle?.update({ disabled: !bounds || operationPending || generationPending })
     if (!bounds) {
       if (startIndex === null && endIndex === null) {
         recentContext.textContent = 'Select a range below'
@@ -1375,7 +1407,9 @@ export function setup(ctx: SpindleFrontendContext) {
     previousContext.textContent = rounds.length === 0
       ? 'None yet'
       : rounds
-        .map((round) => `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
+        .map((round) => round.installmentLabel
+          ? `Round ${round.sequence} — ${round.installmentLabel}`
+          : `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
         .join(' - ')
     resetButton.disabled = operationPending || generationPending || !activeChat || rounds.length === 0
     updateSummary()
@@ -1678,7 +1712,9 @@ export function setup(ctx: SpindleFrontendContext) {
       searchPlaceholder: 'Search rounds...',
       options: [...feeds].reverse().map((optionRound) => ({
         value: optionRound.id,
-        label: `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})`,
+        label: optionRound.installmentLabel
+          ? `Round ${optionRound.sequence} — ${optionRound.installmentLabel}`
+          : `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})`,
         sublabel: activeVersion(optionRound) ? undefined : 'No feed generated',
       })),
       onChange: (roundId) => {
@@ -1786,6 +1822,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function clearSelection(): void {
     startIndex = null
     endIndex = null
+    clearInstallmentDraft()
     renderMessages()
   }
 
@@ -1858,6 +1895,7 @@ export function setup(ctx: SpindleFrontendContext) {
       startMessageId: messages[bounds[0]].id,
       endMessageId: messages[bounds[1]].id,
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
+      installmentLabel: installmentDraft,
     })
   }
 
@@ -2201,6 +2239,7 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       const previousStartId = startIndex === null ? null : messages[startIndex]?.id
       const previousEndId = endIndex === null ? null : messages[endIndex]?.id
+      const previousChatId = activeChat?.id ?? null
       activeChat = message.chat
       const chatId = message.chat?.id ?? null
       const submittedNotes = chatId ? submittedFandomNotesSaves.get(chatId) : undefined
@@ -2215,6 +2254,7 @@ export function setup(ctx: SpindleFrontendContext) {
       messages = message.messages
       rounds = message.rounds
       feeds = message.feedRounds
+      if (previousChatId !== message.chat?.id || message.notice) clearInstallmentDraft()
       if (message.notice) {
         startIndex = null
         endIndex = null
@@ -2270,6 +2310,7 @@ export function setup(ctx: SpindleFrontendContext) {
     document.removeEventListener('visibilitychange', flushWhenHidden)
     destroySettingsComponents()
     fandomNotesHandle?.destroy()
+    installmentLabelHandle?.destroy()
     cancelWaveAnimations(shell)
     drawer.destroy()
     removeStyle()

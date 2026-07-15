@@ -217,6 +217,7 @@ function normalizeStoredRound(value: unknown, sequence: number): StoredRound | n
     id,
     sequence,
     createdAt,
+    installmentLabel: typeof value.installmentLabel === 'string' ? value.installmentLabel.trim() : '',
     startMessageId: first.id,
     endMessageId: last.id,
     startIndex: first.index,
