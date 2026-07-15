@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+
+- Keep feed swipe controls visible for single-version rounds and generate a new version from the trailing right arrow.
+- Remove the separate Regenerate button while preserving navigation through existing versions during generation.
+- Show live output-token progress only in Make for new rounds and only in Feed for regenerated swipes.
+
 ## 1.1.1
 
 - Fix regeneration getting stuck before the backend reported that it had started.

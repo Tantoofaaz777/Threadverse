@@ -3,6 +3,7 @@ import { buildThreadversePrompt } from './prompt'
 import { parseThreadverseFeed, serializeFeedAsPlainText, serializeFeedForContinuity } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
+import { resolveFeedSwipe } from './feed-swipe'
 import { DEFAULT_FEED_FONT_SCALE, isFrontendMessage } from './shared'
 import {
   DEFAULT_SETTINGS,
@@ -32,6 +33,16 @@ const storedMessage = (id: string, index: number) => ({
 })
 
 describe('Threadverse continuity', () => {
+  test('uses the trailing feed swipe to regenerate and existing swipes to navigate', () => {
+    expect(resolveFeedSwipe(-1, 0, 'left')).toEqual({ type: 'none' })
+    expect(resolveFeedSwipe(-1, 0, 'right')).toEqual({ type: 'regenerate' })
+    expect(resolveFeedSwipe(0, 1, 'left')).toEqual({ type: 'none' })
+    expect(resolveFeedSwipe(0, 1, 'right')).toEqual({ type: 'regenerate' })
+    expect(resolveFeedSwipe(0, 3, 'right')).toEqual({ type: 'select', targetIndex: 1 })
+    expect(resolveFeedSwipe(2, 3, 'left')).toEqual({ type: 'select', targetIndex: 1 })
+    expect(resolveFeedSwipe(2, 3, 'right')).toEqual({ type: 'regenerate' })
+  })
+
   test('ignores stale requested chat states but accepts unsolicited updates', () => {
     expect(shouldAcceptActiveChatResponse(4, 5)).toBe(false)
     expect(shouldAcceptActiveChatResponse(5, 5)).toBe(true)

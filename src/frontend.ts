@@ -22,6 +22,7 @@ import {
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { serializeFeedAsPlainText } from './feed'
+import { resolveFeedSwipe } from './feed-swipe'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -391,7 +392,7 @@ const STYLES = `
 
   .threadverse-feed-stack { display: grid; gap: 10px; }
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
-  .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+  .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto; }
   .threadverse-feed-round-select { min-width: 0; }
   .threadverse-version-nav {
     display: flex;
@@ -406,6 +407,12 @@ const STYLES = `
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     text-align: center;
+  }
+  .threadverse-feed-generation-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
   }
   .threadverse-delete-choice { display: grid; gap: 16px; }
   .threadverse-delete-choice-message {
@@ -466,7 +473,7 @@ const STYLES = `
   @media (max-width: 420px) {
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
-    .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+    .threadverse-feed-controls { grid-template-columns: auto minmax(0, 1fr); }
     .threadverse-feed-controls .threadverse-feed-round-select { grid-column: 1 / -1; }
     .threadverse-feed-controls .threadverse-icon-button { width: var(--lumiverse-btn-icon-sm, 32px); }
     .threadverse-delete-choice-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -841,14 +848,29 @@ export function setup(ctx: SpindleFrontendContext) {
     button.setAttribute('aria-label', `${label}...`)
   }
 
+  function generationTokenText(): string {
+    return generationOutputTokens === 0
+      ? '0 output tokens received'
+      : `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'} received`
+  }
+
+  function updateGenerationTokenText(target: HTMLElement): void {
+    target.textContent = generationTokenText()
+  }
+
+  function renderFeedGenerationProgress(): void {
+    const tokenCount = feedList.querySelector<HTMLElement>('[data-feed-generation-token-count]')
+    if (tokenCount) updateGenerationTokenText(tokenCount)
+  }
+
   function renderGenerationProgress(): void {
-    const visible = generationPending && activeChat?.id === generationChatId
+    const visible = generationPending
+      && generationOperation === 'generate'
+      && activeChat?.id === generationChatId
     generationProgress.hidden = !visible
     if (visible) {
       if (!generationTokenDots.firstChild) generationTokenDots.appendChild(createWaveDots())
-      generationTokenCount.textContent = generationOutputTokens === 0
-        ? '0 output tokens received'
-        : `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'} received`
+      updateGenerationTokenText(generationTokenCount)
     } else {
       cancelWaveDots(generationTokenDots)
       generationTokenDots.replaceChildren()
@@ -1414,7 +1436,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function selectRoundVersion(roundId: string, versionId: string): void {
-    if (!activeChat || generationPending || operationPending) return
+    if (!activeChat || operationPending) return
     const round = feeds.find((candidate) => candidate.id === roundId)
     if (!round || round.activeFeedVersionId === versionId) return
     operationPending = true
@@ -1422,32 +1444,55 @@ export function setup(ctx: SpindleFrontendContext) {
     send({ type: 'threadverse:select_feed_version', chatId: activeChat.id, roundId, versionId })
   }
 
-  function versionNavigation(round: FeedRound): HTMLElement | null {
+  function swipeRoundVersion(roundId: string, direction: 'left' | 'right'): void {
+    if (!activeChat || operationPending) return
+    const round = feeds.find((candidate) => candidate.id === roundId)
+    if (!round) return
     const version = activeVersion(round)
-    if (!version || round.feedVersions.length <= 1) return null
-    const index = round.feedVersions.findIndex((candidate) => candidate.id === version.id)
+    const currentIndex = version
+      ? round.feedVersions.findIndex((candidate) => candidate.id === version.id)
+      : -1
+    const action = resolveFeedSwipe(currentIndex, round.feedVersions.length, direction)
+    if (action.type === 'select') {
+      const target = round.feedVersions[action.targetIndex]
+      if (target) selectRoundVersion(round.id, target.id)
+    } else if (action.type === 'regenerate') {
+      generateNextVersion(round.id)
+    }
+  }
+
+  function versionNavigation(round: FeedRound): HTMLElement {
+    const version = activeVersion(round)
+    const index = version
+      ? round.feedVersions.findIndex((candidate) => candidate.id === version.id)
+      : -1
     const navigation = document.createElement('div')
     navigation.className = 'threadverse-version-nav'
 
-    const button = (direction: 'previous' | 'next', targetIndex: number) => {
-      const targetVersion = round.feedVersions[targetIndex]
+    const button = (direction: 'left' | 'right') => {
+      const action = resolveFeedSwipe(index, round.feedVersions.length, direction)
       const element = document.createElement('button')
       element.type = 'button'
       element.className = 'threadverse-button threadverse-icon-button threadverse-button--compact'
-      element.dataset.action = 'select-feed-version'
+      element.dataset.action = 'swipe-feed-version'
       element.dataset.roundId = round.id
-      if (targetVersion) element.dataset.versionId = targetVersion.id
-      element.disabled = !targetVersion || generationPending || operationPending
-      element.title = `${direction === 'previous' ? 'Previous' : 'Next'} version`
+      element.dataset.direction = direction
+      element.disabled = !activeChat
+        || operationPending
+        || action.type === 'none'
+        || (action.type === 'regenerate' && generationPending)
+      element.title = action.type === 'regenerate'
+        ? 'Generate new version'
+        : `${direction === 'left' ? 'Previous' : 'Next'} version`
       element.setAttribute('aria-label', element.title)
-      element.appendChild(actionIcon(direction === 'previous' ? 'chevron-left' : 'chevron-right'))
+      element.appendChild(actionIcon(direction === 'left' ? 'chevron-left' : 'chevron-right'))
       return element
     }
 
     const count = document.createElement('span')
     count.className = 'threadverse-version-count'
-    count.textContent = `${index + 1} / ${round.feedVersions.length}`
-    navigation.append(button('previous', index - 1), count, button('next', index + 1))
+    count.textContent = `${Math.max(0, index + 1)} / ${round.feedVersions.length}`
+    navigation.append(button('left'), count, button('right'))
     return navigation
   }
 
@@ -1472,22 +1517,6 @@ export function setup(ctx: SpindleFrontendContext) {
     toolbar.className = 'threadverse-feed-toolbar threadverse-feed-controls'
     const selectTarget = document.createElement('div')
     selectTarget.className = 'threadverse-feed-round-select'
-    const regenerateButton = document.createElement('button')
-    regenerateButton.type = 'button'
-    regenerateButton.className = 'threadverse-button'
-    regenerateButton.dataset.action = 'regenerate'
-    regenerateButton.dataset.roundId = round.id
-    regenerateButton.disabled = generationPending || operationPending
-    if (
-      generationPending
-      && generationOperation === 'regenerate'
-      && generationChatId === activeChat?.id
-      && generationRoundId === round.id
-    ) {
-      setAnimatedButtonLabel(regenerateButton, 'Regenerating')
-    } else {
-      regenerateButton.textContent = selectedVersion ? 'Regenerate' : 'Generate'
-    }
     const copyButton = document.createElement('button')
     copyButton.type = 'button'
     copyButton.className = 'threadverse-button threadverse-icon-button'
@@ -1504,7 +1533,7 @@ export function setup(ctx: SpindleFrontendContext) {
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending || operationPending
     deleteButton.textContent = 'Delete'
-    toolbar.append(selectTarget, regenerateButton, copyButton, deleteButton)
+    toolbar.append(selectTarget, copyButton, deleteButton)
     feedList.appendChild(toolbar)
     feedRoundHandle = ctx.components.mountSelect(selectTarget, {
       value: round.id,
@@ -1523,16 +1552,24 @@ export function setup(ctx: SpindleFrontendContext) {
       },
     })
 
-    const navigation = versionNavigation(round)
-    if (navigation) feedList.appendChild(navigation)
+    feedList.appendChild(versionNavigation(round))
 
-    if (generationPending) {
+    const isRegeneratingRound = generationPending
+      && generationOperation === 'regenerate'
+      && generationChatId === activeChat?.id
+      && generationRoundId === round.id
+    if (isRegeneratingRound) {
       const status = document.createElement('div')
-      status.className = 'threadverse-card threadverse-feed-toolbar'
-      const copy = document.createElement('span')
-      copy.className = 'threadverse-copy'
-      copy.textContent = generationCancellable ? 'Generating fandom thread...' : 'Starting generation...'
-      status.appendChild(copy)
+      status.className = 'threadverse-card threadverse-feed-generation-status'
+      status.setAttribute('role', 'status')
+      status.setAttribute('aria-live', 'polite')
+      const tokenStatus = document.createElement('span')
+      tokenStatus.className = 'threadverse-generation-token-status'
+      const tokenCount = document.createElement('span')
+      tokenCount.dataset.feedGenerationTokenCount = ''
+      updateGenerationTokenText(tokenCount)
+      tokenStatus.append(tokenCount, createWaveDots())
+      status.appendChild(tokenStatus)
       if (generationCancellable) {
         const cancel = document.createElement('button')
         cancel.type = 'button'; cancel.className = 'threadverse-button'; cancel.dataset.action = 'cancel-generation'; cancel.textContent = 'Cancel'
@@ -1704,7 +1741,7 @@ export function setup(ctx: SpindleFrontendContext) {
     })
   }
 
-  function regenerate(roundId: string): void {
+  function generateNextVersion(roundId: string): void {
     if (!activeChat || generationPending || operationPending) return
     setGenerationPending(true, true, {
       operation: 'regenerate', chatId: activeChat.id, roundId, outputTokens: 0,
@@ -1835,10 +1872,12 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'clear') clearSelection()
     if (action === 'save') generateSelectedRange()
     if (action === 'cancel-generation') cancelGeneration()
-    if (action === 'regenerate') regenerate(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
-    if (action === 'select-feed-version') {
+    if (action === 'swipe-feed-version') {
       const control = target.closest<HTMLElement>('[data-round-id]')!
-      if (control.dataset.versionId) selectRoundVersion(control.dataset.roundId!, control.dataset.versionId)
+      const direction = control.dataset.direction
+      if (direction === 'left' || direction === 'right') {
+        swipeRoundVersion(control.dataset.roundId!, direction)
+      }
     }
     if (action === 'copy-round') void copyRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
@@ -1872,6 +1911,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (generationPending && generationChatId === message.chatId) {
           generationOutputTokens = message.outputTokens ?? generationOutputTokens
           renderGenerationProgress()
+          renderFeedGenerationProgress()
         }
         return
       }
