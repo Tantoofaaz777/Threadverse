@@ -1873,12 +1873,36 @@ export function setup(ctx: SpindleFrontendContext) {
     }
   }
 
-  function resetContinuity(): void {
+  async function resetContinuity(): Promise<void> {
     if (!activeChat || operationPending || generationPending) return
+    const chatId = activeChat.id
+    const chatLabel = activeChat.name
+    const roundCount = rounds.length
     operationPending = true
     clearError()
     renderContinuity()
-    send({ type: 'threadverse:reset_continuity', chatId: activeChat.id })
+    renderFeed()
+
+    let confirmed = false
+    try {
+      const result = await ctx.ui.showConfirm({
+        title: 'Reset continuity',
+        message: `Reset Threadverse continuity for "${chatLabel}"? This permanently deletes ${roundCount} saved round${roundCount === 1 ? '' : 's'} and every generated version.`,
+        variant: 'danger',
+        confirmLabel: 'Reset',
+      })
+      confirmed = result.confirmed
+    } catch {
+      showError('Threadverse could not open the reset confirmation.')
+    }
+
+    if (!confirmed || !activeChat || activeChat.id !== chatId) {
+      operationPending = false
+      renderContinuity()
+      renderFeed()
+      return
+    }
+    send({ type: 'threadverse:reset_continuity', chatId })
   }
 
   const onClick = (event: Event) => {
@@ -1908,7 +1932,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     if (action === 'copy-round') void copyRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
-    if (action === 'reset') resetContinuity()
+    if (action === 'reset') void resetContinuity()
     if (action === 'save-prompt') savePrompt()
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
     if (action === 'delete-instruction-preset') void deleteInstructionPreset()

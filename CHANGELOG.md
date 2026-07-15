@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.7
+
+- Require a native danger confirmation before resetting a chat's complete Threadverse continuity.
+- Block duplicate actions while the confirmation is open and leave all data untouched when cancelled.
+
 ## 1.1.6
 
 - Animate each generation-status word as its own wave step before continuing through the three dots.
