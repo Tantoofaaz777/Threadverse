@@ -103,6 +103,12 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
+      type: 'threadverse:open_fandom_notes_editor'
+      chatId: string
+      chatName: string
+      value: string
+    }
+  | {
       type: 'threadverse:generate_thread'
       chatId: string
       startMessageId: string
@@ -159,6 +165,13 @@ export type BackendToFrontendMessage =
       text: string
       cancelled: boolean
     }
+  | {
+      type: 'threadverse:fandom_notes_editor_result'
+      chatId: string
+      chatName: string
+      text: string
+      cancelled: boolean
+    }
 
 export function isFrontendMessage(value: unknown): value is FrontendToBackendMessage {
   if (!value || typeof value !== 'object') return false
@@ -170,6 +183,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:save_fandom_notes'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:open_instruction_editor'
+    || type === 'threadverse:open_fandom_notes_editor'
     || type === 'threadverse:generate_thread'
     || type === 'threadverse:regenerate_thread'
     || type === 'threadverse:select_feed_version'

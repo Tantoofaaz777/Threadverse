@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2
+
+- Add the native inline expand control to the Fandom Notes textarea, matching Instructions.
+- Save expanded-editor changes immediately to the correct chat through the existing notes autosave flow.
+
 ## 1.2.1
 
 - Preserve Fandom Notes when resetting a chat's continuity, including the newest editor value still awaiting autosave.

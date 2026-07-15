@@ -553,7 +553,7 @@ const STYLES = `
     width: 100%;
   }
 
-  .threadverse-instructions-input { padding-right: 38px; }
+  .threadverse-expandable-textarea-input { padding-right: 38px; }
 
   .threadverse-inline-expand {
     position: absolute;
@@ -735,7 +735,17 @@ export function setup(ctx: SpindleFrontendContext) {
         <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Fandom Notes</h3>
           <div class="threadverse-settings-field">
-            <div data-setting="fandom-notes"></div>
+            <div class="threadverse-expandable-textarea">
+              <div data-setting="fandom-notes"></div>
+              <button class="threadverse-inline-expand" type="button" data-action="expand-fandom-notes" title="Expand editor" aria-label="Expand fandom notes editor">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1017,7 +1027,7 @@ export function setup(ctx: SpindleFrontendContext) {
       placeholder: activeChat ? 'Fandom notes...' : 'Open a roleplay chat to add notes.',
       disabled: !activeChat,
       ariaLabel: 'Fandom notes for the active chat',
-      className: 'threadverse-secondary-input',
+      className: 'threadverse-secondary-input threadverse-expandable-textarea-input',
       onChange: (notes) => {
         const chat = activeChat
         if (!chat || fandomNotesDraftChatId !== chat.id) return
@@ -1196,7 +1206,7 @@ export function setup(ctx: SpindleFrontendContext) {
       value: activePreset.instructions,
       rows: 14,
       ariaLabel: 'Permanent Threadverse instructions',
-      className: 'threadverse-secondary-input threadverse-instructions-input',
+      className: 'threadverse-secondary-input threadverse-expandable-textarea-input',
       onChange: (instructions) => {
         const preset = getActiveInstructionPreset()
         if (preset) preset.instructions = instructions
@@ -1297,6 +1307,17 @@ export function setup(ctx: SpindleFrontendContext) {
       type: 'threadverse:open_instruction_editor',
       presetId: preset.id,
       value: preset.instructions,
+    })
+  }
+
+  function expandFandomNotes(): void {
+    const chat = activeChat
+    if (!chat || fandomNotesDraftChatId !== chat.id || operationPending) return
+    send({
+      type: 'threadverse:open_fandom_notes_editor',
+      chatId: chat.id,
+      chatName: chat.name,
+      value: fandomNotesDraft,
     })
   }
 
@@ -2004,6 +2025,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
     if (action === 'delete-instruction-preset') void deleteInstructionPreset()
     if (action === 'expand-instructions') expandInstructions()
+    if (action === 'expand-fandom-notes') expandFandomNotes()
   }
 
   const flushPendingAutomaticSave = () => {
@@ -2123,6 +2145,23 @@ export function setup(ctx: SpindleFrontendContext) {
             instructionsHandle?.update({ value: message.text })
           }
         }
+      }
+      return
+    }
+
+    if (message.type === 'threadverse:fandom_notes_editor_result') {
+      if (message.cancelled) return
+      if (pendingFandomNotesSave?.chatId !== message.chatId) flushFandomNotesSave()
+      pendingFandomNotesSave = {
+        chatId: message.chatId,
+        chatName: message.chatName,
+        notes: message.text,
+      }
+      flushFandomNotesSave()
+      if (activeChat?.id === message.chatId) {
+        fandomNotesDraftChatId = message.chatId
+        fandomNotesDraft = message.text
+        fandomNotesHandle?.update({ value: message.text })
       }
       return
     }

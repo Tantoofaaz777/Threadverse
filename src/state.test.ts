@@ -56,6 +56,9 @@ describe('Threadverse continuity', () => {
       type: 'threadverse:save_fandom_notes', chatId: 'chat', chatName: 'RP', notes: 'Remember this.',
     })).toBe(true)
     expect(isFrontendMessage({
+      type: 'threadverse:open_fandom_notes_editor', chatId: 'chat', chatName: 'RP', value: 'Notes',
+    })).toBe(true)
+    expect(isFrontendMessage({
       type: 'threadverse:select_feed_version', chatId: 'chat', roundId: 'round', versionId: 'version',
     })).toBe(true)
     expect(isFrontendMessage({

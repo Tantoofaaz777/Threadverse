@@ -618,6 +618,22 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       const result = await spindle.textEditor.open({ title: 'Instructions', value: payload.value, placeholder: 'Describe how the fictional fandom should discuss the story...', userId })
       send({ type: 'threadverse:instruction_editor_result', presetId: payload.presetId, text: result.text, cancelled: result.cancelled }, userId); return
     }
+    if (payload.type === 'threadverse:open_fandom_notes_editor') {
+      const result = await spindle.textEditor.open({
+        title: 'Fandom Notes',
+        value: payload.value,
+        placeholder: 'Fandom notes...',
+        userId,
+      })
+      send({
+        type: 'threadverse:fandom_notes_editor_result',
+        chatId: payload.chatId,
+        chatName: payload.chatName,
+        text: result.text,
+        cancelled: result.cancelled,
+      }, userId)
+      return
+    }
     if (payload.type === 'threadverse:generate_thread') { await generateThread(payload, userId); return }
     if (payload.type === 'threadverse:regenerate_thread') {
       await regenerateThread(payload.chatId, payload.roundId, payload.fandomNotes, userId)
