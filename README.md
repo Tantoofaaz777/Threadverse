@@ -16,7 +16,7 @@ The extension currently includes:
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - persisted continuity limits and editable permanent instructions;
-- named instruction presets with the native expanded Lumiverse text editor;
+- named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
 - automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
 - a prompt builder for chronological story, fandom continuity, optional fandom notes, and instructions;

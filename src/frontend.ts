@@ -543,7 +543,7 @@ const STYLES = `
 
   .threadverse-preset-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     gap: 6px;
     align-items: center;
   }
@@ -711,6 +711,7 @@ export function setup(ctx: SpindleFrontendContext) {
           <h3 class="threadverse-eyebrow">Instructions</h3>
           <div class="threadverse-preset-row">
             <div data-setting="instruction-preset"></div>
+            <button class="threadverse-button threadverse-button--compact" type="button" data-action="rename-instruction-preset">Rename</button>
             <button class="threadverse-button threadverse-button--compact" type="button" data-action="new-instruction-preset">New</button>
             <button class="threadverse-button threadverse-button--compact threadverse-button--danger" type="button" data-action="delete-instruction-preset">Delete</button>
           </div>
@@ -1278,6 +1279,20 @@ export function setup(ctx: SpindleFrontendContext) {
     send({
       type: 'threadverse:request_instruction_preset_name',
       existingNames: settingsDraft.instructionPresets.map((preset) => preset.name),
+    })
+  }
+
+  function requestInstructionPresetRename(): void {
+    if (!settingsDraft || operationPending) return
+    const preset = getActiveInstructionPreset()
+    if (!preset) return
+    send({
+      type: 'threadverse:request_instruction_preset_rename',
+      presetId: preset.id,
+      currentName: preset.name,
+      existingNames: settingsDraft.instructionPresets
+        .filter((candidate) => candidate.id !== preset.id)
+        .map((candidate) => candidate.name),
     })
   }
 
@@ -2022,6 +2037,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (action === 'delete-round') void deleteRound(target.closest<HTMLElement>('[data-round-id]')!.dataset.roundId!)
     if (action === 'reset') void resetContinuity()
     if (action === 'save-prompt') savePrompt()
+    if (action === 'rename-instruction-preset') requestInstructionPresetRename()
     if (action === 'new-instruction-preset') requestNewInstructionPreset()
     if (action === 'delete-instruction-preset') void deleteInstructionPreset()
     if (action === 'expand-instructions') expandInstructions()
@@ -2132,6 +2148,17 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       settingsDraft.instructionPresets.push(preset)
       settingsDraft.activeInstructionPresetId = preset.id
+      mountSettingsForm(settingsDraft, settingsConnections)
+      return
+    }
+
+    if (message.type === 'threadverse:instruction_preset_rename') {
+      if (!message.name || !settingsDraft) return
+      const preset = settingsDraft.instructionPresets.find(
+        (candidate) => candidate.id === message.presetId,
+      )
+      if (!preset) return
+      preset.name = message.name
       mountSettingsForm(settingsDraft, settingsConnections)
       return
     }

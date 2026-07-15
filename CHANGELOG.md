@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3
+
+- Add a Rename button beside the instruction preset selector.
+- Use Lumiverse's native pre-filled input modal and reject names already used by another preset.
+- Keep renamed presets as prompt drafts until Save Prompt is pressed.
+
 ## 1.2.2
 
 - Add the native inline expand control to the Fandom Notes textarea, matching Instructions.

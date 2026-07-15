@@ -614,6 +614,40 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       }
       send({ type: 'threadverse:instruction_preset_name', name }, userId); return
     }
+    if (payload.type === 'threadverse:request_instruction_preset_rename') {
+      const result = await spindle.prompt.input({
+        title: 'Rename instruction preset',
+        defaultValue: payload.currentName,
+        placeholder: 'Preset name...',
+        submitLabel: 'Rename',
+        userId,
+      })
+      const name = result.cancelled || !result.value ? null : result.value.trim()
+      if (name && name.length > 100) {
+        spindle.toast.error('Instruction preset names are limited to 100 characters.', { userId })
+        send({
+          type: 'threadverse:instruction_preset_rename',
+          presetId: payload.presetId,
+          name: null,
+        }, userId)
+        return
+      }
+      if (name && payload.existingNames.some((item) => item.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        spindle.toast.error(`A preset named "${name}" already exists.`, { userId })
+        send({
+          type: 'threadverse:instruction_preset_rename',
+          presetId: payload.presetId,
+          name: null,
+        }, userId)
+        return
+      }
+      send({
+        type: 'threadverse:instruction_preset_rename',
+        presetId: payload.presetId,
+        name,
+      }, userId)
+      return
+    }
     if (payload.type === 'threadverse:open_instruction_editor') {
       const result = await spindle.textEditor.open({ title: 'Instructions', value: payload.value, placeholder: 'Describe how the fictional fandom should discuss the story...', userId })
       send({ type: 'threadverse:instruction_editor_result', presetId: payload.presetId, text: result.text, cancelled: result.cancelled }, userId); return

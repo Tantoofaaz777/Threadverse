@@ -101,6 +101,12 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
   | { type: 'threadverse:save_fandom_notes'; chatId: string; chatName: string; notes: string }
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
+  | {
+      type: 'threadverse:request_instruction_preset_rename'
+      presetId: string
+      currentName: string
+      existingNames: string[]
+    }
   | { type: 'threadverse:open_instruction_editor'; presetId: string; value: string }
   | {
       type: 'threadverse:open_fandom_notes_editor'
@@ -157,6 +163,7 @@ export type BackendToFrontendMessage =
       connections: ConnectionSummary[]
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
+  | { type: 'threadverse:instruction_preset_rename'; presetId: string; name: string | null }
   | { type: 'threadverse:settings_save_result'; scope: 'automatic' | 'prompt'; error?: string }
   | { type: 'threadverse:fandom_notes_save_result'; chatId: string; notes: string; error?: string }
   | {
@@ -182,6 +189,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:save_prompt'
     || type === 'threadverse:save_fandom_notes'
     || type === 'threadverse:request_instruction_preset_name'
+    || type === 'threadverse:request_instruction_preset_rename'
     || type === 'threadverse:open_instruction_editor'
     || type === 'threadverse:open_fandom_notes_editor'
     || type === 'threadverse:generate_thread'
