@@ -12,7 +12,7 @@ The extension currently includes:
 - the `Feed`, `Make`, and `Settings` navigation shell;
 - active-chat message loading and success-themed range selection;
 - per-user, per-chat chronological round persistence;
-- previous/recent context display and continuity reset controls;
+- previous/recent context display and continuity reset controls that preserve Fandom Notes;
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - persisted continuity limits and editable permanent instructions;

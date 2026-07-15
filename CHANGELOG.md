@@ -1,11 +1,16 @@
 # Changelog
 
+## 1.2.1
+
+- Preserve Fandom Notes when resetting a chat's continuity, including the newest editor value still awaiting autosave.
+- Clarify in the native reset confirmation that only rounds and generated versions are deleted.
+
 ## 1.2.0
 
 - Add per-chat Fandom Notes in their own Settings card after Instructions.
 - Save notes automatically while preserving pending edits across chat switches and immediate generations.
 - Insert non-empty notes verbatim between Fandom Continuity and Instructions, with no fixed description; omit the entire block when empty.
-- Preserve notes when individual rounds are deleted, while the confirmed continuity reset removes the chat's notes too.
+- Preserve notes when individual rounds are deleted.
 
 ## 1.1.7
 

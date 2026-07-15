@@ -114,7 +114,7 @@ export type FrontendToBackendMessage =
   | { type: 'threadverse:delete_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_round'; chatId: string; roundId: string }
   | { type: 'threadverse:cancel_generation' }
-  | { type: 'threadverse:reset_continuity'; chatId: string }
+  | { type: 'threadverse:reset_continuity'; chatId: string; fandomNotes?: string }
   | { type: 'threadverse:copy_result'; success: boolean }
 
 export type BackendToFrontendMessage =

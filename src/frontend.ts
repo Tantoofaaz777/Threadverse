@@ -1949,7 +1949,7 @@ export function setup(ctx: SpindleFrontendContext) {
     try {
       const result = await ctx.ui.showConfirm({
         title: 'Reset continuity',
-        message: `Reset Threadverse continuity for "${chatLabel}"? This permanently deletes ${roundCount} saved round${roundCount === 1 ? '' : 's'}, every generated version, and the fandom notes.`,
+        message: `Reset Threadverse continuity for "${chatLabel}"? This permanently deletes ${roundCount} saved round${roundCount === 1 ? '' : 's'} and every generated version. Fandom notes will be kept.`,
         variant: 'danger',
         confirmLabel: 'Reset',
       })
@@ -1965,9 +1965,11 @@ export function setup(ctx: SpindleFrontendContext) {
       return
     }
     discardPendingFandomNotes(chatId)
-    fandomNotesDraft = ''
-    fandomNotesHandle?.update({ value: '' })
-    send({ type: 'threadverse:reset_continuity', chatId })
+    send({
+      type: 'threadverse:reset_continuity',
+      chatId,
+      fandomNotes: fandomNotesDraftChatId === chatId ? fandomNotesDraft : undefined,
+    })
   }
 
   const onClick = (event: Event) => {

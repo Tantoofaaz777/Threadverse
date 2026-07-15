@@ -386,6 +386,26 @@ export function removeFeedVersion(round: StoredRound, versionId: string): boolea
   return true
 }
 
+export function resetContinuityRounds(
+  store: ThreadverseStore,
+  chatId: string,
+  chatName: string,
+  fandomNotes?: string,
+): void {
+  const existing = store.chats[chatId]
+  const preservedNotes = fandomNotes ?? existing?.fandomNotes ?? ''
+  if (!preservedNotes.trim()) {
+    delete store.chats[chatId]
+    return
+  }
+  store.chats[chatId] = {
+    chatId,
+    chatName: chatName || existing?.chatName || 'Untitled chat',
+    fandomNotes: preservedNotes,
+    rounds: [],
+  }
+}
+
 export function pruneInactiveFeedVersions(
   rounds: StoredRound[],
   settings: ThreadverseSettings,

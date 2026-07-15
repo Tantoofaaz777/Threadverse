@@ -14,6 +14,7 @@ import {
   normalizeStore,
   pruneInactiveFeedVersions,
   removeFeedVersion,
+  resetContinuityRounds,
   resolveContinuity,
   resolveSamplers,
   selectFeedVersion,
@@ -157,6 +158,35 @@ describe('Threadverse continuity', () => {
     })
     expect(store.chats.legacy.fandomNotes).toBe('')
     expect(store.chats.empty).toBeUndefined()
+  })
+
+  test('resets rounds and generated versions while preserving fandom notes verbatim', () => {
+    const store = normalizeStore({
+      version: 1,
+      chats: {
+        chat: {
+          chatName: 'Original name',
+          fandomNotes: '  Keep this note exactly.  ',
+          rounds: [{
+            id: 'round-1',
+            messages: [storedMessage('m1', 1)],
+            feedVersions: [{ id: 'v1', feed: storedFeed('Thread') }],
+          }],
+        },
+      },
+    })
+
+    resetContinuityRounds(store, 'chat', 'Current name')
+
+    expect(store.chats.chat).toEqual({
+      chatId: 'chat',
+      chatName: 'Current name',
+      fandomNotes: '  Keep this note exactly.  ',
+      rounds: [],
+    })
+
+    resetContinuityRounds(store, 'chat', 'Current name', 'Newest editor value')
+    expect(store.chats.chat.fandomNotes).toBe('Newest editor value')
   })
 
   test('migrates a legacy feed into the first active version', () => {

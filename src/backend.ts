@@ -24,6 +24,7 @@ import {
   normalizeStore,
   pruneInactiveFeedVersions,
   removeFeedVersion,
+  resetContinuityRounds,
   resolveContinuity,
   resolveSamplers,
   selectFeedVersion,
@@ -554,11 +555,19 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
   )
 }
 
-async function resetContinuity(chatId: string, userId: string): Promise<void> {
+async function resetContinuity(
+  chatId: string,
+  fandomNotes: string | undefined,
+  userId: string,
+): Promise<void> {
   const activeChat = await spindle.chats.getActive(userId)
   if (!activeChat || activeChat.id !== chatId) throw new Error('The active chat changed. Refresh Threadverse and try again.')
   cancelActiveGeneration(userId)
-  await queueStoreWrite(userId, async () => { const store = await loadStore(userId); delete store.chats[chatId]; await saveStore(store, userId) })
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    resetContinuityRounds(store, chatId, activeChat.name, fandomNotes)
+    await saveStore(store, userId)
+  })
   await finishSuccessfulMutation('reset_continuity', chatId, 'Continuity reset for this chat.', userId)
 }
 
@@ -623,7 +632,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       else spindle.toast.error('Threadverse could not copy the thread.', { userId })
       return
     }
-    await resetContinuity(payload.chatId, userId)
+    await resetContinuity(payload.chatId, payload.fandomNotes, userId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Threadverse could not complete the operation.'
     spindle.log.error(`[Threadverse] ${message}`)
