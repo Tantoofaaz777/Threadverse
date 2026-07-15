@@ -290,33 +290,15 @@ const STYLES = `
   .threadverse-generation-token-status {
     display: inline-flex;
     align-items: baseline;
+    justify-content: center;
     color: var(--lumiverse-primary, var(--lumiverse-accent));
-    font-size: 10px;
+    font-size: 14px;
     font-variant-numeric: tabular-nums;
     line-height: 1.4;
+    text-align: center;
   }
 
-  .threadverse-generating-label,
-  .threadverse-generation-token-status {
-    transform-origin: center;
-    animation: threadverse-generation-status-wave 1.45s ease-in-out infinite;
-    will-change: transform, opacity, filter;
-  }
-
-  @keyframes threadverse-generation-status-wave {
-    0%, 100% { transform: translateY(0); opacity: .76; filter: brightness(.92); }
-    35% { transform: translateY(-.15em); opacity: 1; filter: brightness(1.1); }
-    70% { transform: translateY(.06em); opacity: .86; filter: brightness(1); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .threadverse-generating-label,
-    .threadverse-generation-token-status {
-      animation: none;
-      opacity: 1;
-      filter: none;
-    }
-  }
+  .threadverse-wave-text { display: inline-block; opacity: .45; transform: translateY(0); }
 
   .threadverse-message-list {
     display: flex;
@@ -401,6 +383,13 @@ const STYLES = `
   .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto; }
   .threadverse-feed-round-select { min-width: 0; }
   .threadverse-feed-controls .threadverse-action-icon { width: 13px; height: 13px; }
+  .threadverse-feed-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
   .threadverse-version-nav {
     display: flex;
     align-items: center;
@@ -416,10 +405,10 @@ const STYLES = `
     text-align: center;
   }
   .threadverse-feed-generation-status {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: grid;
+    justify-items: center;
     gap: 10px;
+    text-align: center;
   }
   .threadverse-delete-choice { display: grid; gap: 16px; }
   .threadverse-delete-choice-message {
@@ -481,11 +470,12 @@ const STYLES = `
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
     .threadverse-feed-controls {
-      grid-template-columns: repeat(2, var(--lumiverse-btn-icon-sm, 32px));
-      justify-content: center;
+      grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
     }
     .threadverse-feed-controls .threadverse-feed-round-select { grid-column: 1 / -1; }
-    .threadverse-feed-controls .threadverse-icon-button { width: var(--lumiverse-btn-icon-sm, 32px); }
+    .threadverse-feed-action { width: auto !important; }
+    .threadverse-feed-action--copy { grid-column: 2; }
+    .threadverse-feed-action--delete { grid-column: 3; }
     .threadverse-delete-choice-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .threadverse-comment--root { padding: 11px 9px; }
     .threadverse-comment { padding-left: 8px; }
@@ -791,6 +781,13 @@ export function setup(ctx: SpindleFrontendContext) {
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let settingsComponents: Array<{ destroy(): void }> = []
   const waveAnimations = new WeakMap<HTMLElement, Animation[]>()
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  const waveKeyframes: Keyframe[] = [
+    { transform: 'translateY(0)', opacity: .45, offset: 0 },
+    { transform: 'translateY(-.34em)', opacity: 1, offset: .3 },
+    { transform: 'translateY(0)', opacity: .45, offset: .6 },
+    { transform: 'translateY(0)', opacity: .45, offset: 1 },
+  ]
 
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
 
@@ -799,36 +796,49 @@ export function setup(ctx: SpindleFrontendContext) {
     contextError.hidden = true
   }
 
+  function animateWave(element: HTMLElement, delay: number): Animation | null {
+    if (prefersReducedMotion) {
+      element.style.opacity = '1'
+      return null
+    }
+    return element.animate(waveKeyframes, {
+      duration: 900,
+      delay,
+      easing: 'ease-in-out',
+      iterations: Infinity,
+    })
+  }
+
+  function createWaveText(text: string): HTMLElement {
+    const element = document.createElement('span')
+    element.className = 'threadverse-wave-text threadverse-wave-animated'
+    element.textContent = text
+    const animation = animateWave(element, 0)
+    if (animation) waveAnimations.set(element, [animation])
+    return element
+  }
+
   function createWaveDots(): HTMLElement {
     const dots = document.createElement('span')
-    dots.className = 'threadverse-wave-dots'
+    dots.className = 'threadverse-wave-dots threadverse-wave-animated'
     dots.setAttribute('aria-hidden', 'true')
     const animations: Animation[] = []
     for (let index = 0; index < 3; index += 1) {
       const dot = document.createElement('span')
       dot.className = 'threadverse-wave-dot'
       dot.textContent = '.'
-      animations.push(dot.animate([
-        { transform: 'translateY(0)', opacity: .45, offset: 0 },
-        { transform: 'translateY(-.34em)', opacity: 1, offset: .3 },
-        { transform: 'translateY(0)', opacity: .45, offset: .6 },
-        { transform: 'translateY(0)', opacity: .45, offset: 1 },
-      ], {
-        duration: 900,
-        delay: index * 120,
-        easing: 'ease-in-out',
-        iterations: Infinity,
-      }))
+      const animation = animateWave(dot, (index + 1) * 120)
+      if (animation) animations.push(animation)
       dots.appendChild(dot)
     }
-    waveAnimations.set(dots, animations)
+    if (animations.length > 0) waveAnimations.set(dots, animations)
     return dots
   }
 
-  function cancelWaveDots(root: ParentNode): void {
-    for (const dots of root.querySelectorAll<HTMLElement>('.threadverse-wave-dots')) {
-      for (const animation of waveAnimations.get(dots) ?? []) animation.cancel()
-      waveAnimations.delete(dots)
+  function cancelWaveAnimations(root: ParentNode): void {
+    for (const element of root.querySelectorAll<HTMLElement>('.threadverse-wave-animated')) {
+      for (const animation of waveAnimations.get(element) ?? []) animation.cancel()
+      waveAnimations.delete(element)
     }
   }
 
@@ -836,10 +846,8 @@ export function setup(ctx: SpindleFrontendContext) {
     button.classList.add('is-generating')
     const animated = document.createElement('span')
     animated.className = 'threadverse-generating-label'
-    animated.append(document.createTextNode(label))
-    const dots = createWaveDots()
-    animated.appendChild(dots)
-    cancelWaveDots(button)
+    animated.append(createWaveText(label), createWaveDots())
+    cancelWaveAnimations(button)
     button.replaceChildren(animated)
     button.setAttribute('aria-label', `${label}...`)
   }
@@ -885,7 +893,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (pending && generationOperation === 'generate') {
       setAnimatedButtonLabel(saveButton, 'Generating')
     } else {
-      cancelWaveDots(saveButton)
+      cancelWaveAnimations(saveButton)
       saveButton.classList.remove('is-generating')
       saveButton.textContent = 'Generate Thread'
       saveButton.removeAttribute('aria-label')
@@ -1484,9 +1492,8 @@ export function setup(ctx: SpindleFrontendContext) {
     status.setAttribute('aria-live', 'polite')
     const tokenStatus = document.createElement('span')
     tokenStatus.className = 'threadverse-generation-token-status'
-    const tokenCount = document.createElement('span')
+    const tokenCount = createWaveText(generationTokenText())
     tokenCount.dataset.feedGenerationTokenCount = ''
-    updateGenerationTokenText(tokenCount)
     tokenStatus.append(tokenCount, createWaveDots())
     status.appendChild(tokenStatus)
     if (generationCancellable) {
@@ -1503,7 +1510,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function renderFeed(): void {
     feedRoundHandle?.destroy()
     feedRoundHandle = null
-    cancelWaveDots(feedList)
+    cancelWaveAnimations(feedList)
     feedList.replaceChildren()
     const isGeneratingNewRound = generationPending
       && generationOperation === 'generate'
@@ -1528,22 +1535,22 @@ export function setup(ctx: SpindleFrontendContext) {
     selectTarget.className = 'threadverse-feed-round-select'
     const copyButton = document.createElement('button')
     copyButton.type = 'button'
-    copyButton.className = 'threadverse-button threadverse-icon-button'
+    copyButton.className = 'threadverse-button threadverse-feed-action threadverse-feed-action--copy'
     copyButton.dataset.action = 'copy-round'
     copyButton.dataset.roundId = round.id
     copyButton.disabled = !selectedVersion || operationPending
     copyButton.title = 'Copy thread'
     copyButton.setAttribute('aria-label', 'Copy thread')
-    copyButton.appendChild(actionIcon('copy'))
+    copyButton.append(actionIcon('copy'), document.createTextNode('Copy'))
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
-    deleteButton.className = 'threadverse-button threadverse-icon-button threadverse-button--danger'
+    deleteButton.className = 'threadverse-button threadverse-feed-action threadverse-feed-action--delete threadverse-button--danger'
     deleteButton.dataset.action = 'delete-round'
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending || operationPending
     deleteButton.title = 'Delete round'
     deleteButton.setAttribute('aria-label', 'Delete round')
-    deleteButton.appendChild(actionIcon('trash'))
+    deleteButton.append(actionIcon('trash'), document.createTextNode('Delete'))
     toolbar.append(selectTarget, copyButton, deleteButton)
     feedList.appendChild(toolbar)
     feedRoundHandle = ctx.components.mountSelect(selectTarget, {
@@ -2044,7 +2051,7 @@ export function setup(ctx: SpindleFrontendContext) {
     window.removeEventListener('pagehide', flushPendingAutomaticSave)
     document.removeEventListener('visibilitychange', flushWhenHidden)
     destroySettingsComponents()
-    cancelWaveDots(shell)
+    cancelWaveAnimations(shell)
     drawer.destroy()
     removeStyle()
     ctx.dom.cleanup()

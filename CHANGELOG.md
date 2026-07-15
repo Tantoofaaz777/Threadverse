@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5
+
+- Restore the full-width mobile round selector while centering Copy and Delete below it with icons and labels.
+- Increase and center the Feed generation status text.
+- Run the status text and dots through the same staggered wave animation.
+
 ## 1.1.4
 
 - Open Feed immediately when generating a new round and show all live token progress there.
