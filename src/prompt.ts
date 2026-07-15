@@ -37,6 +37,10 @@ export function groupConsecutiveStoryRanges(items: StoryRange[]): StoryRange[] {
   return grouped
 }
 
+export function installmentOrRoundLabel(installmentLabel: string, sequence: number): string {
+  return installmentLabel || `ROUND ${sequence}`
+}
+
 export function buildThreadversePrompt(input: ThreadversePromptInput): string {
   const fandomNotes = input.fandomNotes?.trim() ?? ''
   return [

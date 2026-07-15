@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- Remove redundant `FANDOM THREAD N` prefixes from Fandom Continuity headings.
+- Use the literal title / episode / chapter label there, with `ROUND N` only as a fallback for unlabeled legacy rounds.
+
 ## 1.3.0
 
 - Add an optional Title / episode / chapter field that appears after a complete Make range is selected.

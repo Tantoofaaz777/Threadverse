@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { buildThreadversePrompt, groupConsecutiveStoryRanges } from './prompt'
+import {
+  buildThreadversePrompt,
+  groupConsecutiveStoryRanges,
+  installmentOrRoundLabel,
+} from './prompt'
 import { parseThreadverseFeed, serializeFeedAsPlainText, serializeFeedForContinuity } from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
@@ -475,6 +479,12 @@ describe('Threadverse continuity', () => {
       '--- ZETA — S01E03 ---\nScene A\n\nScene B\n\n---\n\n--- ZETA — S01E04 ---\nScene C',
     )
     expect(prompt).toContain('>>> RECENT CONTEXT <<<\n\n--- ZETA — S01E05 ---\nCurrent scene')
+  })
+
+  test('uses only installment labels in fandom continuity with a legacy round fallback', () => {
+    expect(installmentOrRoundLabel('ZETA — S01E03', 4)).toBe('ZETA — S01E03')
+    expect(installmentOrRoundLabel('', 4)).toBe('ROUND 4')
+    expect(installmentOrRoundLabel('ZETA — S01E03', 4)).not.toContain('FANDOM THREAD')
   })
 
   test('omits the fandom notes block completely when notes are empty', () => {

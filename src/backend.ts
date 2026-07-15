@@ -13,7 +13,11 @@ import {
   type ThreadversePromptSettings,
 } from './shared'
 import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
-import { buildThreadversePrompt, groupConsecutiveStoryRanges } from './prompt'
+import {
+  buildThreadversePrompt,
+  groupConsecutiveStoryRanges,
+  installmentOrRoundLabel,
+} from './prompt'
 import {
   DEFAULT_INSTRUCTIONS,
   activeFeedVersion,
@@ -271,12 +275,12 @@ function promptForRound(
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
   return buildThreadversePrompt({
     previousRanges: groupConsecutiveStoryRanges(previous.map((round) => ({
-      label: round.installmentLabel || `ROUND ${round.sequence}`,
+      label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
       content: formatMessages(round.messages),
     }))),
     recentRange: { label: installmentLabel || 'CURRENT RANGE', content: formatMessages(recent) },
     fandomContinuity: fandom.map(({ round, feed }) => ({
-      label: `FANDOM THREAD ${round.sequence}${round.installmentLabel ? ` — ${round.installmentLabel}` : ''}`,
+      label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
       content: serializeFeedForContinuity(feed),
     })),
     fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
