@@ -394,6 +394,7 @@ const STYLES = `
   .threadverse-feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
   .threadverse-feed-controls { grid-template-columns: minmax(0, 1fr) auto auto; }
   .threadverse-feed-round-select { min-width: 0; }
+  .threadverse-feed-controls .threadverse-action-icon { width: 13px; height: 13px; }
   .threadverse-version-nav {
     display: flex;
     align-items: center;
@@ -473,7 +474,10 @@ const STYLES = `
   @media (max-width: 420px) {
     .threadverse-feed-toolbar { grid-template-columns: minmax(0, 1fr); }
     .threadverse-feed-toolbar .threadverse-button { width: 100%; }
-    .threadverse-feed-controls { grid-template-columns: auto minmax(0, 1fr); }
+    .threadverse-feed-controls {
+      grid-template-columns: repeat(2, var(--lumiverse-btn-icon-sm, 32px));
+      justify-content: center;
+    }
     .threadverse-feed-controls .threadverse-feed-round-select { grid-column: 1 / -1; }
     .threadverse-feed-controls .threadverse-icon-button { width: var(--lumiverse-btn-icon-sm, 32px); }
     .threadverse-delete-choice-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1302,7 +1306,7 @@ export function setup(ctx: SpindleFrontendContext) {
     return row
   }
 
-  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more' | 'copy' | 'chevron-left' | 'chevron-right'
+  type ActionIcon = 'upvote' | 'downvote' | 'comment' | 'reply' | 'share' | 'more' | 'copy' | 'trash' | 'chevron-left' | 'chevron-right'
 
   const ACTION_ICON_PATHS: Record<ActionIcon, string[]> = {
     upvote: ['M12 3 4.5 10.5h4.25V21h6.5V10.5h4.25L12 3Z'],
@@ -1312,6 +1316,7 @@ export function setup(ctx: SpindleFrontendContext) {
     share: ['M15 8l5-5m0 0h-5m5 0v5', 'M11 5H7a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-4'],
     more: ['M12 6.5h.01', 'M12 12h.01', 'M12 17.5h.01'],
     copy: ['M8 8h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8Z', 'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3'],
+    trash: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M10 11v6', 'M14 11v6'],
     'chevron-left': ['m15 18-6-6 6-6'],
     'chevron-right': ['m9 18 6-6-6-6'],
   }
@@ -1528,11 +1533,13 @@ export function setup(ctx: SpindleFrontendContext) {
     copyButton.appendChild(actionIcon('copy'))
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
-    deleteButton.className = 'threadverse-button threadverse-button--danger'
+    deleteButton.className = 'threadverse-button threadverse-icon-button threadverse-button--danger'
     deleteButton.dataset.action = 'delete-round'
     deleteButton.dataset.roundId = round.id
     deleteButton.disabled = generationPending || operationPending
-    deleteButton.textContent = 'Delete'
+    deleteButton.title = 'Delete round'
+    deleteButton.setAttribute('aria-label', 'Delete round')
+    deleteButton.appendChild(actionIcon('trash'))
     toolbar.append(selectTarget, copyButton, deleteButton)
     feedList.appendChild(toolbar)
     feedRoundHandle = ctx.components.mountSelect(selectTarget, {

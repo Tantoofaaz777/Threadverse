@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3
+
+- Replace the oversized Feed delete button with Lumiverse's native-style Trash2 icon.
+- Center the compact Copy and Delete actions together on mobile.
+
 ## 1.1.2
 
 - Keep feed swipe controls visible for single-version rounds and generate a new version from the trailing right arrow.
