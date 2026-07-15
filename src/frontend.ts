@@ -298,7 +298,8 @@ const STYLES = `
     text-align: center;
   }
 
-  .threadverse-wave-text { display: inline-block; opacity: .45; transform: translateY(0); }
+  .threadverse-wave-text { display: inline-flex; align-items: baseline; gap: .25em; }
+  .threadverse-wave-word { display: inline-block; opacity: .45; transform: translateY(0); }
 
   .threadverse-message-list {
     display: flex;
@@ -809,16 +810,39 @@ export function setup(ctx: SpindleFrontendContext) {
     })
   }
 
+  function waveWords(text: string): string[] {
+    return text.trim().split(/\s+/).filter(Boolean)
+  }
+
+  function updateWaveText(element: HTMLElement, text: string): number {
+    const words = waveWords(text)
+    const existing = Array.from(element.querySelectorAll<HTMLElement>('.threadverse-wave-word'))
+    if (existing.length === words.length) {
+      existing.forEach((word, index) => { word.textContent = words[index] })
+      return words.length
+    }
+
+    cancelWaveAnimations(element)
+    element.replaceChildren()
+    words.forEach((word, index) => {
+      const segment = document.createElement('span')
+      segment.className = 'threadverse-wave-word threadverse-wave-animated'
+      segment.textContent = word
+      const animation = animateWave(segment, index * 120)
+      if (animation) waveAnimations.set(segment, [animation])
+      element.appendChild(segment)
+    })
+    return words.length
+  }
+
   function createWaveText(text: string): HTMLElement {
     const element = document.createElement('span')
-    element.className = 'threadverse-wave-text threadverse-wave-animated'
-    element.textContent = text
-    const animation = animateWave(element, 0)
-    if (animation) waveAnimations.set(element, [animation])
+    element.className = 'threadverse-wave-text'
+    updateWaveText(element, text)
     return element
   }
 
-  function createWaveDots(): HTMLElement {
+  function createWaveDots(startIndex: number): HTMLElement {
     const dots = document.createElement('span')
     dots.className = 'threadverse-wave-dots threadverse-wave-animated'
     dots.setAttribute('aria-hidden', 'true')
@@ -827,7 +851,7 @@ export function setup(ctx: SpindleFrontendContext) {
       const dot = document.createElement('span')
       dot.className = 'threadverse-wave-dot'
       dot.textContent = '.'
-      const animation = animateWave(dot, (index + 1) * 120)
+      const animation = animateWave(dot, (startIndex + index) * 120)
       if (animation) animations.push(animation)
       dots.appendChild(dot)
     }
@@ -846,7 +870,7 @@ export function setup(ctx: SpindleFrontendContext) {
     button.classList.add('is-generating')
     const animated = document.createElement('span')
     animated.className = 'threadverse-generating-label'
-    animated.append(createWaveText(label), createWaveDots())
+    animated.append(createWaveText(label), createWaveDots(waveWords(label).length))
     cancelWaveAnimations(button)
     button.replaceChildren(animated)
     button.setAttribute('aria-label', `${label}...`)
@@ -859,7 +883,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function updateGenerationTokenText(target: HTMLElement): void {
-    target.textContent = generationTokenText()
+    updateWaveText(target, generationTokenText())
   }
 
   function renderFeedGenerationProgress(): void {
@@ -1492,9 +1516,10 @@ export function setup(ctx: SpindleFrontendContext) {
     status.setAttribute('aria-live', 'polite')
     const tokenStatus = document.createElement('span')
     tokenStatus.className = 'threadverse-generation-token-status'
-    const tokenCount = createWaveText(generationTokenText())
+    const tokenText = generationTokenText()
+    const tokenCount = createWaveText(tokenText)
     tokenCount.dataset.feedGenerationTokenCount = ''
-    tokenStatus.append(tokenCount, createWaveDots())
+    tokenStatus.append(tokenCount, createWaveDots(waveWords(tokenText).length))
     status.appendChild(tokenStatus)
     if (generationCancellable) {
       const cancel = document.createElement('button')

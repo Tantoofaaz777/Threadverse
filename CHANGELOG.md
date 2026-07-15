@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.6
+
+- Animate each generation-status word as its own wave step before continuing through the three dots.
+- Keep the wave phase stable while the live token number and singular/plural label update.
+
 ## 1.1.5
 
 - Restore the full-width mobile round selector while centering Copy and Delete below it with icons and labels.
