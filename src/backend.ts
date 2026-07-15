@@ -307,11 +307,21 @@ async function runGeneration(
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
+  const unresolvedPrompt = promptForRound(store, chatId, recent, cutoff, installmentLabel, fandomNotesOverride)
+  const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(unresolvedPrompt, {
+    chatId,
+    userId,
+    commit: true,
+  })
+  throwIfAborted(active)
+  if (diagnostics.length > 0) {
+    spindle.log.warn(`[Threadverse] Prompt macro resolution reported ${diagnostics.length} diagnostic(s): ${diagnostics.map((item) => item.message).join('; ')}`)
+  }
   const stream = spindle.generate.quietStream({
     type: 'quiet', userId, connection_id: connectionId,
     messages: [{
       role: 'user',
-      content: promptForRound(store, chatId, recent, cutoff, installmentLabel, fandomNotesOverride),
+      content: resolvedPrompt,
     }],
     parameters: { max_tokens: samplers.maxOutputTokens, temperature: samplers.temperature, top_p: samplers.topP },
     signal: active.controller.signal,
