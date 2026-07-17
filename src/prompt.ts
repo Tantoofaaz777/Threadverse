@@ -65,6 +65,7 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
     ] }
   ]
 }
+Reply nesting is semantic: every reply MUST be inside the "replies" array of the exact comment it answers. Items in the same array are sibling replies to the same parent.
 Return ONLY the JSON—no explanations, no notes, no commentary.`,
   ].join('\n\n')
 }

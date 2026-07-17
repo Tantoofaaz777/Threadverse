@@ -513,6 +513,8 @@ describe('Threadverse continuity', () => {
     expect(outputFormat).toContain('"body"')
     expect(outputFormat).toContain('"score"')
     expect(outputFormat).toContain('"replies"')
+    expect(outputFormat).toContain('every reply MUST be inside the "replies" array of the exact comment it answers')
+    expect(outputFormat).toContain('Items in the same array are sibling replies to the same parent')
     expect(outputFormat).not.toContain('"subreddit"')
     expect(outputFormat).not.toContain('"flair"')
     expect(outputFormat).not.toContain('"timestamp"')
