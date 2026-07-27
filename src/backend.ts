@@ -251,34 +251,25 @@ function toRegexScriptSummary(script: RegexScriptDTO): RegexScriptSummary {
   }
 }
 
+async function getOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
+  const result = await spindle.regex_scripts.list({
+    limit: 200,
+    userId,
+  })
+  return result.data.filter(
+    (script) => script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)),
+  )
+}
+
 async function listOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
   if (!spindle.permissions.has('regex_scripts')) return []
   try {
-    const result = await spindle.regex_scripts.list({
-      target: 'prompt',
-      limit: 200,
-      userId,
-    })
-    return result.data.filter(
-      (script) => !script.disabled
-        && script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)),
-    )
+    return await getOutgoingRegexScripts(userId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown regex listing error.'
     spindle.log.warn(`[Threadverse] Could not load outgoing regex scripts: ${message}`)
     return []
   }
-}
-
-async function getActiveOutgoingRegexScripts(userId: string, chatId: string): Promise<RegexScriptDTO[]> {
-  const chat = await spindle.chats.get(chatId, userId)
-  const scripts = await spindle.regex_scripts.getActive({
-    target: 'prompt',
-    characterId: chat?.character_id || undefined,
-    chatId,
-    userId,
-  })
-  return scripts.filter((script) => script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)))
 }
 
 async function sendSettingsState(userId: string): Promise<void> {
@@ -298,6 +289,7 @@ async function sendSettingsState(userId: string): Promise<void> {
     defaultInstructions: DEFAULT_INSTRUCTIONS,
     connections,
     regexScripts: outgoingRegexScripts.map(toRegexScriptSummary),
+    regexScriptsPermissionGranted: spindle.permissions.has('regex_scripts'),
   }, userId)
 }
 
@@ -487,7 +479,7 @@ async function runGeneration(
       throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
     }
     const [availableScripts, rawChatMessages] = await Promise.all([
-      getActiveOutgoingRegexScripts(userId, chatId),
+      getOutgoingRegexScripts(userId),
       spindle.chat.getMessages(chatId),
     ])
     throwIfAborted(active)

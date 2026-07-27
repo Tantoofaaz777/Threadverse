@@ -761,7 +761,7 @@ export function setup(ctx: SpindleFrontendContext) {
         <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Outgoing Regex</h3>
           <div data-setting="outgoing-regex"></div>
-          <p class="threadverse-settings-hint">Selected prompt regexes run only on story messages sent in Previous Context and Recent Context.</p>
+          <p class="threadverse-settings-hint">Selected regexes run as Outgoing only on story messages sent in Previous Context and Recent Context.</p>
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
@@ -862,6 +862,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
   let settingsRegexScripts: RegexScriptSummary[] = []
+  let settingsRegexScriptsPermissionGranted = false
   let defaultInstructions = ''
   let fandomThreadsHandle: SpindleNumericInputHandle | null = null
   let instructionPresetHandle: SpindleSelectHandle | null = null
@@ -1067,13 +1068,24 @@ export function setup(ctx: SpindleFrontendContext) {
     }
   }
 
-  function mountOutgoingRegexList(regexScripts: RegexScriptSummary[]): void {
+  function mountOutgoingRegexList(
+    regexScripts: RegexScriptSummary[],
+    regexScriptsPermissionGranted: boolean,
+  ): void {
     const target = settingTarget('outgoing-regex')
     target.replaceChildren()
-    if (!settingsDraft || regexScripts.length === 0) {
+    if (!settingsDraft) return
+    if (!regexScriptsPermissionGranted) {
       const empty = document.createElement('p')
       empty.className = 'threadverse-settings-hint'
-      empty.textContent = 'No enabled prompt regex scripts were found in Lumiverse.'
+      empty.textContent = 'Regex Scripts permission is not enabled for Threadverse. Enable it in Lumiverse Extensions, then reopen Settings.'
+      target.appendChild(empty)
+      return
+    }
+    if (regexScripts.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'threadverse-settings-hint'
+      empty.textContent = 'No regex scripts that can affect story messages were found in Lumiverse.'
       target.appendChild(empty)
       return
     }
@@ -1086,12 +1098,6 @@ export function setup(ctx: SpindleFrontendContext) {
       ai_output: 'AI output',
       world_info: 'System',
     }
-    const scopeLabels: Record<RegexScriptSummary['scope'], string> = {
-      global: 'Global',
-      character: 'Character',
-      chat: 'Chat',
-    }
-
     const syncSelection = () => {
       if (!settingsDraft) return
       const hiddenSelected = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id))
@@ -1119,7 +1125,7 @@ export function setup(ctx: SpindleFrontendContext) {
       const meta = document.createElement('span')
       meta.className = 'threadverse-regex-meta'
       const placements = script.placement.map((placement) => placementLabels[placement]).join(' · ')
-      meta.textContent = `${placements} · ${scopeLabels[script.scope]}`
+      meta.textContent = placements
       copy.append(name, meta)
       row.append(checkbox, copy)
       list.appendChild(row)
@@ -1139,6 +1145,7 @@ export function setup(ctx: SpindleFrontendContext) {
     settings: ThreadverseSettingsPayload,
     connections: ConnectionSummary[],
     regexScripts: RegexScriptSummary[],
+    regexScriptsPermissionGranted: boolean,
   ): void {
     destroySettingsComponents()
     settingsDraft = {
@@ -1148,6 +1155,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     settingsConnections = connections
     settingsRegexScripts = regexScripts
+    settingsRegexScriptsPermissionGranted = regexScriptsPermissionGranted
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
@@ -1253,7 +1261,7 @@ export function setup(ctx: SpindleFrontendContext) {
     })
 
     maintainFandomToggle.checked = settingsDraft.maintainFandomContinuity
-    mountOutgoingRegexList(regexScripts)
+    mountOutgoingRegexList(regexScripts, regexScriptsPermissionGranted)
 
     applyFeedFontScale(settingsDraft.feedFontScale)
     const feedFontScaleHandle = ctx.components.mountRangeSlider(settingTarget('feed-font-scale'), {
@@ -1405,7 +1413,12 @@ export function setup(ctx: SpindleFrontendContext) {
       (preset) => preset.id !== activePreset.id,
     )
     settingsDraft.activeInstructionPresetId = settingsDraft.instructionPresets[0].id
-    mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
+    mountSettingsForm(
+      settingsDraft,
+      settingsConnections,
+      settingsRegexScripts,
+      settingsRegexScriptsPermissionGranted,
+    )
   }
 
   function expandInstructions(): void {
@@ -2205,7 +2218,12 @@ export function setup(ctx: SpindleFrontendContext) {
 
     if (message.type === 'threadverse:settings_state') {
       defaultInstructions = message.defaultInstructions
-      mountSettingsForm(message.settings, message.connections, message.regexScripts)
+      mountSettingsForm(
+        message.settings,
+        message.connections,
+        message.regexScripts,
+        message.regexScriptsPermissionGranted,
+      )
       return
     }
 
@@ -2250,7 +2268,12 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       settingsDraft.instructionPresets.push(preset)
       settingsDraft.activeInstructionPresetId = preset.id
-      mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
+      mountSettingsForm(
+        settingsDraft,
+        settingsConnections,
+        settingsRegexScripts,
+        settingsRegexScriptsPermissionGranted,
+      )
       return
     }
 
@@ -2261,7 +2284,12 @@ export function setup(ctx: SpindleFrontendContext) {
       )
       if (!preset) return
       preset.name = message.name
-      mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
+      mountSettingsForm(
+        settingsDraft,
+        settingsConnections,
+        settingsRegexScripts,
+        settingsRegexScriptsPermissionGranted,
+      )
       return
     }
 

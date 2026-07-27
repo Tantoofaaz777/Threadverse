@@ -17,7 +17,7 @@ The extension currently includes:
 - previous/recent context display and continuity reset controls that preserve Fandom Notes;
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
-- selectable outgoing Lumiverse prompt regexes applied only to copied story messages in Previous and Recent Context;
+- selectable Lumiverse regexes applied as Outgoing only to copied story messages in Previous and Recent Context;
 - persisted continuity limits and editable permanent instructions;
 - named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;

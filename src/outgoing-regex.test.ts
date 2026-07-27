@@ -44,6 +44,19 @@ describe('outgoing story regex', () => {
     expect(messages.map((message) => message.content)).toEqual(['foo user', 'foo assistant'])
   })
 
+  test('uses a selected script as outgoing regardless of its native target or scope', () => {
+    const result = applyOutgoingRegexToMessages(messages, [
+      regexScript({
+        target: 'response',
+        scope: 'character',
+        scope_id: 'character-1',
+        disabled: true,
+      }),
+    ], 2)
+
+    expect(result.map((message) => message.content)).toEqual(['bar user', 'foo assistant'])
+  })
+
   test('preserves active-script order and honors depth limits and trim strings', () => {
     const result = applyOutgoingRegexToMessages(messages, [
       regexScript({

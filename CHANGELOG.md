@@ -1,9 +1,15 @@
 # Changelog
 
+## 1.5.1
+
+- Show every Lumiverse regex that can affect story messages, regardless of its native enabled state, target, or scope.
+- Treat an explicitly selected regex as Threadverse Outgoing while still leaving stored roleplay messages untouched.
+- Distinguish a missing Regex Scripts permission from an empty regex library in Settings.
+
 ## 1.5.0
 
 - Add selectable Outgoing Regex scripts from Lumiverse Settings.
-- Apply enabled prompt regexes only to copied story messages, respecting user/AI/system placement, active chat scope, script order, depth limits, flags, and trim strings.
+- Apply selected regexes only to copied story messages, respecting user/AI/system placement, script order, depth limits, flags, and trim strings.
 - Leave saved rounds, roleplay messages, instructions, Fandom Notes, Fandom Continuity, and output parsing untouched.
 - Replace the generation wave with a single fading status dot and static text.
 - Track streamed reasoning tokens separately from visible output tokens.

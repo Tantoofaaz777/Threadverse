@@ -174,6 +174,7 @@ export type BackendToFrontendMessage =
       defaultInstructions: string
       connections: ConnectionSummary[]
       regexScripts: RegexScriptSummary[]
+      regexScriptsPermissionGranted: boolean
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
   | { type: 'threadverse:instruction_preset_rename'; presetId: string; name: string | null }
