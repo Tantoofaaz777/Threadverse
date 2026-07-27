@@ -73,7 +73,7 @@ function beginGeneration(
   try {
     send({
       type: 'threadverse:generation_state', status: 'started', chatId,
-      operation, roundId, outputTokens: 0,
+      operation, roundId, outputTokens: 0, reasoningTokens: 0,
     }, userId)
   } catch (error) {
     activeGenerations.delete(userId)
@@ -435,20 +435,27 @@ async function runGeneration(
   })
   let content: string | null = null
   let outputCharacters = 0
+  let reasoningCharacters = 0
   let outputTokens = 0
-  let lastReportedTokens = 0
+  let reasoningTokens = 0
+  let lastReportedOutputTokens = 0
+  let lastReportedReasoningTokens = 0
   let lastProgressAt = 0
 
   const reportProgress = (force = false) => {
     const now = Date.now()
-    if (!force && outputTokens > 1 && now - lastProgressAt < 250) return
-    if (outputTokens === lastReportedTokens) return
-    lastReportedTokens = outputTokens
+    if (!force && outputTokens + reasoningTokens > 1 && now - lastProgressAt < 250) return
+    if (
+      outputTokens === lastReportedOutputTokens
+      && reasoningTokens === lastReportedReasoningTokens
+    ) return
+    lastReportedOutputTokens = outputTokens
+    lastReportedReasoningTokens = reasoningTokens
     lastProgressAt = now
     try {
       send({
         type: 'threadverse:generation_state', status: 'progress', chatId,
-        operation, roundId, outputTokens,
+        operation, roundId, outputTokens, reasoningTokens,
       }, userId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown progress update error.'
@@ -460,6 +467,10 @@ async function runGeneration(
     if (chunk.type === 'token' && chunk.token) {
       outputCharacters += chunk.token.length
       outputTokens = Math.ceil(outputCharacters / 4)
+      reportProgress()
+    } else if (chunk.type === 'reasoning' && chunk.token) {
+      reasoningCharacters += chunk.token.length
+      reasoningTokens = Math.ceil(reasoningCharacters / 4)
       reportProgress()
     } else if (chunk.type === 'done') {
       content = chunk.content

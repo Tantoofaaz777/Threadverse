@@ -270,36 +270,30 @@ const STYLES = `
     color: var(--lumiverse-warning, #f59e0b);
   }
 
-  .threadverse-generating-label {
+  .threadverse-generation-indicator {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     color: var(--lumiverse-primary, var(--lumiverse-accent));
   }
 
   .threadverse-button.is-generating:disabled { opacity: 1; }
 
-  .threadverse-wave-dots {
-    display: inline-flex;
-    align-items: baseline;
-    justify-content: flex-start;
-    min-width: 1.35em;
-    width: 1.35em;
-    margin-left: .08em;
-    line-height: 1;
-    vertical-align: baseline;
-    white-space: nowrap;
-  }
-
-  .threadverse-wave-dot {
-    display: inline-block;
-    opacity: .45;
-    transform: translateY(0);
+  .threadverse-generation-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: threadverse-generation-pulse 1.2s ease-in-out infinite;
   }
 
   .threadverse-generation-token-status {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: center;
+    gap: 8px;
     color: var(--lumiverse-primary, var(--lumiverse-accent));
     font-size: 14px;
     font-variant-numeric: tabular-nums;
@@ -307,8 +301,17 @@ const STYLES = `
     text-align: center;
   }
 
-  .threadverse-wave-text { display: inline-flex; align-items: baseline; gap: .25em; }
-  .threadverse-wave-word { display: inline-block; opacity: .45; transform: translateY(0); }
+  @keyframes threadverse-generation-pulse {
+    0%, 100% { opacity: .3; }
+    50% { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .threadverse-generation-dot {
+      animation: none;
+      opacity: 1;
+    }
+  }
 
   .threadverse-message-list {
     display: flex;
@@ -803,6 +806,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let generationChatId: string | null = null
   let generationRoundId: string | null = null
   let generationOutputTokens = 0
+  let generationReasoningTokens = 0
   let promptSavePending = false
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
   let fandomNotesSaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -821,15 +825,6 @@ export function setup(ctx: SpindleFrontendContext) {
   let pendingFandomNotesSave: { chatId: string; chatName: string; notes: string } | null = null
   const submittedFandomNotesSaves = new Map<string, string>()
   let settingsComponents: Array<{ destroy(): void }> = []
-  const waveAnimations = new WeakMap<HTMLElement, Animation[]>()
-  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  const waveKeyframes: Keyframe[] = [
-    { transform: 'translateY(0)', opacity: .45, offset: 0 },
-    { transform: 'translateY(-.34em)', opacity: 1, offset: .3 },
-    { transform: 'translateY(0)', opacity: .45, offset: .6 },
-    { transform: 'translateY(0)', opacity: .45, offset: 1 },
-  ]
-
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
 
   function clearError(): void {
@@ -837,93 +832,39 @@ export function setup(ctx: SpindleFrontendContext) {
     contextError.hidden = true
   }
 
-  function animateWave(element: HTMLElement, delay: number): Animation | null {
-    if (prefersReducedMotion) {
-      element.style.opacity = '1'
-      return null
-    }
-    return element.animate(waveKeyframes, {
-      duration: 900,
-      delay,
-      easing: 'ease-in-out',
-      iterations: Infinity,
-    })
+  function createGenerationDot(): HTMLElement {
+    const dot = document.createElement('span')
+    dot.className = 'threadverse-generation-dot'
+    dot.setAttribute('aria-hidden', 'true')
+    return dot
   }
 
-  function waveWords(text: string): string[] {
-    return text.trim().split(/\s+/).filter(Boolean)
+  function createGenerationIndicator(text: string): HTMLElement {
+    const indicator = document.createElement('span')
+    indicator.className = 'threadverse-generation-indicator'
+    const label = document.createElement('span')
+    label.textContent = text
+    indicator.append(createGenerationDot(), label)
+    return indicator
   }
 
-  function updateWaveText(element: HTMLElement, text: string): number {
-    const words = waveWords(text)
-    const existing = Array.from(element.querySelectorAll<HTMLElement>('.threadverse-wave-word'))
-    if (existing.length === words.length) {
-      existing.forEach((word, index) => { word.textContent = words[index] })
-      return words.length
-    }
-
-    cancelWaveAnimations(element)
-    element.replaceChildren()
-    words.forEach((word, index) => {
-      const segment = document.createElement('span')
-      segment.className = 'threadverse-wave-word threadverse-wave-animated'
-      segment.textContent = word
-      const animation = animateWave(segment, index * 120)
-      if (animation) waveAnimations.set(segment, [animation])
-      element.appendChild(segment)
-    })
-    return words.length
-  }
-
-  function createWaveText(text: string): HTMLElement {
-    const element = document.createElement('span')
-    element.className = 'threadverse-wave-text'
-    updateWaveText(element, text)
-    return element
-  }
-
-  function createWaveDots(startIndex: number): HTMLElement {
-    const dots = document.createElement('span')
-    dots.className = 'threadverse-wave-dots threadverse-wave-animated'
-    dots.setAttribute('aria-hidden', 'true')
-    const animations: Animation[] = []
-    for (let index = 0; index < 3; index += 1) {
-      const dot = document.createElement('span')
-      dot.className = 'threadverse-wave-dot'
-      dot.textContent = '.'
-      const animation = animateWave(dot, (startIndex + index) * 120)
-      if (animation) animations.push(animation)
-      dots.appendChild(dot)
-    }
-    if (animations.length > 0) waveAnimations.set(dots, animations)
-    return dots
-  }
-
-  function cancelWaveAnimations(root: ParentNode): void {
-    for (const element of root.querySelectorAll<HTMLElement>('.threadverse-wave-animated')) {
-      for (const animation of waveAnimations.get(element) ?? []) animation.cancel()
-      waveAnimations.delete(element)
-    }
-  }
-
-  function setAnimatedButtonLabel(button: HTMLButtonElement, label: string): void {
+  function setGeneratingButtonLabel(button: HTMLButtonElement, label: string): void {
     button.classList.add('is-generating')
-    const animated = document.createElement('span')
-    animated.className = 'threadverse-generating-label'
-    animated.append(createWaveText(label), createWaveDots(waveWords(label).length))
-    cancelWaveAnimations(button)
-    button.replaceChildren(animated)
+    button.replaceChildren(createGenerationIndicator(`${label}...`))
     button.setAttribute('aria-label', `${label}...`)
   }
 
   function generationTokenText(): string {
-    return generationOutputTokens === 0
-      ? '0 output tokens received'
-      : `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'} received`
+    const output = `~${generationOutputTokens} output token${generationOutputTokens === 1 ? '' : 's'}`
+    const reasoning = `~${generationReasoningTokens} reasoning token${generationReasoningTokens === 1 ? '' : 's'}`
+    if (generationOutputTokens > 0 && generationReasoningTokens > 0) return `${output} · ${reasoning}`
+    if (generationReasoningTokens > 0) return reasoning
+    if (generationOutputTokens > 0) return `${output} received`
+    return '0 output tokens received'
   }
 
   function updateGenerationTokenText(target: HTMLElement): void {
-    updateWaveText(target, generationTokenText())
+    target.textContent = generationTokenText()
   }
 
   function renderFeedGenerationProgress(): void {
@@ -939,6 +880,7 @@ export function setup(ctx: SpindleFrontendContext) {
       chatId?: string
       roundId?: string
       outputTokens?: number
+      reasoningTokens?: number
     },
   ): void {
     generationPending = pending
@@ -948,16 +890,17 @@ export function setup(ctx: SpindleFrontendContext) {
       generationChatId = details?.chatId ?? generationChatId
       generationRoundId = details?.roundId ?? generationRoundId
       generationOutputTokens = details?.outputTokens ?? generationOutputTokens
+      generationReasoningTokens = details?.reasoningTokens ?? generationReasoningTokens
     } else {
       generationOperation = null
       generationChatId = null
       generationRoundId = null
       generationOutputTokens = 0
+      generationReasoningTokens = 0
     }
     if (pending && generationOperation === 'generate') {
-      setAnimatedButtonLabel(saveButton, 'Generating')
+      setGeneratingButtonLabel(saveButton, 'Generating')
     } else {
-      cancelWaveAnimations(saveButton)
       saveButton.classList.remove('is-generating')
       saveButton.textContent = 'Generate Thread'
       saveButton.removeAttribute('aria-label')
@@ -1642,10 +1585,10 @@ export function setup(ctx: SpindleFrontendContext) {
     status.setAttribute('aria-live', 'polite')
     const tokenStatus = document.createElement('span')
     tokenStatus.className = 'threadverse-generation-token-status'
-    const tokenText = generationTokenText()
-    const tokenCount = createWaveText(tokenText)
+    const tokenCount = document.createElement('span')
+    tokenCount.textContent = generationTokenText()
     tokenCount.dataset.feedGenerationTokenCount = ''
-    tokenStatus.append(tokenCount, createWaveDots(waveWords(tokenText).length))
+    tokenStatus.append(createGenerationDot(), tokenCount)
     status.appendChild(tokenStatus)
     if (generationCancellable) {
       const cancel = document.createElement('button')
@@ -1661,7 +1604,6 @@ export function setup(ctx: SpindleFrontendContext) {
   function renderFeed(): void {
     feedRoundHandle?.destroy()
     feedRoundHandle = null
-    cancelWaveAnimations(feedList)
     feedList.replaceChildren()
     const isGeneratingNewRound = generationPending
       && generationOperation === 'generate'
@@ -1882,7 +1824,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!bounds || !activeChat || operationPending || generationPending) return
 
     setGenerationPending(true, true, {
-      operation: 'generate', chatId: activeChat.id, outputTokens: 0,
+      operation: 'generate', chatId: activeChat.id, outputTokens: 0, reasoningTokens: 0,
     })
     armGenerationStartTimer()
     clearError()
@@ -1902,7 +1844,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function generateNextVersion(roundId: string): void {
     if (!activeChat || generationPending || operationPending) return
     setGenerationPending(true, true, {
-      operation: 'regenerate', chatId: activeChat.id, roundId, outputTokens: 0,
+      operation: 'regenerate', chatId: activeChat.id, roundId, outputTokens: 0, reasoningTokens: 0,
     })
     armGenerationStartTimer()
     renderFeed()
@@ -2105,6 +2047,7 @@ export function setup(ctx: SpindleFrontendContext) {
       if (message.status === 'progress') {
         if (generationPending && generationChatId === message.chatId) {
           generationOutputTokens = message.outputTokens ?? generationOutputTokens
+          generationReasoningTokens = message.reasoningTokens ?? generationReasoningTokens
           renderFeedGenerationProgress()
         }
         return
@@ -2114,6 +2057,7 @@ export function setup(ctx: SpindleFrontendContext) {
         chatId: message.chatId,
         roundId: message.roundId,
         outputTokens: message.outputTokens,
+        reasoningTokens: message.reasoningTokens,
       })
       if (message.status === 'completed' && activeChat?.id === message.chatId) {
         if (message.roundId) selectedFeedRoundId = message.roundId
@@ -2311,7 +2255,6 @@ export function setup(ctx: SpindleFrontendContext) {
     destroySettingsComponents()
     fandomNotesHandle?.destroy()
     installmentLabelHandle?.destroy()
-    cancelWaveAnimations(shell)
     drawer.destroy()
     removeStyle()
     ctx.dom.cleanup()

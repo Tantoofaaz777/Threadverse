@@ -156,6 +156,7 @@ export type BackendToFrontendMessage =
       operation?: 'generate' | 'regenerate'
       roundId?: string
       outputTokens?: number
+      reasoningTokens?: number
       error?: string
     }
   | {
