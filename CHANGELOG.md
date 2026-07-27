@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0
+
+- Add selectable Outgoing Regex scripts from Lumiverse Settings.
+- Apply enabled prompt regexes only to copied story messages, respecting user/AI/system placement, active chat scope, script order, depth limits, flags, and trim strings.
+- Leave saved rounds, roleplay messages, instructions, Fandom Notes, Fandom Continuity, and output parsing untouched.
+- Replace the generation wave with a single fading status dot and static text.
+- Track streamed reasoning tokens separately from visible output tokens.
+
 ## 1.4.0
 
 - Inherit Threadverse continuity and Fandom Notes when a Lumiverse chat is forked.

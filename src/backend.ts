@@ -8,11 +8,13 @@ import {
   type ConnectionSummary,
   type FeedVersion,
   type InstructionPreset,
+  type RegexScriptSummary,
   type ThreadverseAutomaticSettings,
   type ThreadverseFeed,
   type ThreadversePromptSettings,
 } from './shared'
 import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
+import { applyOutgoingRegexToMessages } from './outgoing-regex'
 import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
@@ -43,6 +45,7 @@ import {
 import type {
   ChatDTO,
   ChatForkedPayloadDTO,
+  RegexScriptDTO,
 } from 'lumiverse-spindle-types'
 
 declare const spindle: import('lumiverse-spindle-types').SpindleAPI
@@ -235,15 +238,66 @@ async function getConnections(userId: string): Promise<ConnectionSummary[]> {
   return (await spindle.connections.list(userId)).map(toConnectionSummary)
 }
 
+const STORY_REGEX_PLACEMENTS = new Set(['user_input', 'ai_output', 'world_info'])
+
+function toRegexScriptSummary(script: RegexScriptDTO): RegexScriptSummary {
+  return {
+    id: script.id,
+    name: script.name,
+    placement: script.placement.filter(
+      (placement): placement is RegexScriptSummary['placement'][number] => STORY_REGEX_PLACEMENTS.has(placement),
+    ),
+    scope: script.scope,
+  }
+}
+
+async function listOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
+  if (!spindle.permissions.has('regex_scripts')) return []
+  try {
+    const result = await spindle.regex_scripts.list({
+      target: 'prompt',
+      limit: 200,
+      userId,
+    })
+    return result.data.filter(
+      (script) => !script.disabled
+        && script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)),
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown regex listing error.'
+    spindle.log.warn(`[Threadverse] Could not load outgoing regex scripts: ${message}`)
+    return []
+  }
+}
+
+async function getActiveOutgoingRegexScripts(userId: string, chatId: string): Promise<RegexScriptDTO[]> {
+  const chat = await spindle.chats.get(chatId, userId)
+  const scripts = await spindle.regex_scripts.getActive({
+    target: 'prompt',
+    characterId: chat?.character_id || undefined,
+    chatId,
+    userId,
+  })
+  return scripts.filter((script) => script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)))
+}
+
 async function sendSettingsState(userId: string): Promise<void> {
-  const [store, connections] = await Promise.all([loadStore(userId), getConnections(userId)])
+  const [store, connections, outgoingRegexScripts] = await Promise.all([
+    loadStore(userId),
+    getConnections(userId),
+    listOutgoingRegexScripts(userId),
+  ])
   const settings = { ...store.settings }
   const selected = connections.find((item) => item.id === settings.connectionId)
     ?? connections.find((item) => item.isDefault) ?? connections[0]
   if (!selected) settings.connectionId = null
   else if (!connections.some((item) => item.id === settings.connectionId)) settings.connectionId = selected.id
   send({
-    type: 'threadverse:settings_state', settings, defaultInstructions: DEFAULT_INSTRUCTIONS, connections,
+    type: 'threadverse:settings_state',
+    settings,
+    defaultInstructions: DEFAULT_INSTRUCTIONS,
+    connections,
+    regexScripts: outgoingRegexScripts.map(toRegexScriptSummary),
   }, userId)
 }
 
@@ -257,6 +311,17 @@ function requireNumber(value: unknown, label: string, minimum: number, maximum: 
 
 function optionalNumber(value: unknown, label: string, minimum: number, maximum: number, integer = false): number | null {
   return value === null || value === undefined || value === '' ? null : requireNumber(value, label, minimum, maximum, integer)
+}
+
+function validateStringIds(value: unknown, label: string, limit = 200): string[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be a list.`)
+  if (value.length > limit) throw new Error(`${label} is limited to ${limit} items.`)
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (typeof candidate !== 'string' || !candidate.trim()) throw new Error(`${label} contains an invalid ID.`)
+    ids.add(candidate.trim())
+  }
+  return [...ids]
 }
 
 function validateInstructionPresets(value: unknown): InstructionPreset[] {
@@ -287,6 +352,7 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
   if (input.connectionId && !connection) throw new Error('Choose an available Lumiverse connection.')
   const settings: ThreadverseAutomaticSettings = {
     connectionId: connection?.id ?? null,
+    outgoingRegexScriptIds: validateStringIds(input.outgoingRegexScriptIds ?? [], 'Outgoing regex scripts'),
     maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
     temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
     topP: optionalNumber(input.topP, 'Top P', 0, 1),
@@ -368,6 +434,7 @@ function promptForRound(
   cutoff: number,
   installmentLabel: string,
   fandomNotesOverride?: string,
+  formatStoryMessages: (messages: ChatMessageSummary[]) => string = formatMessages,
 ): string {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
@@ -383,9 +450,9 @@ function promptForRound(
   return buildThreadversePrompt({
     previousRanges: groupConsecutiveStoryRanges(previous.map((round) => ({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
-      content: formatMessages(round.messages),
+      content: formatStoryMessages(round.messages),
     }))),
-    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: formatMessages(recent) },
+    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: formatStoryMessages(recent) },
     fandomContinuity: fandom.map(({ round, feed }) => ({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
       content: serializeFeedForContinuity(feed),
@@ -414,7 +481,45 @@ async function runGeneration(
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
-  const unresolvedPrompt = promptForRound(store, chatId, recent, cutoff, installmentLabel, fandomNotesOverride)
+  let formatStoryMessages = formatMessages
+  if (store.settings.outgoingRegexScriptIds.length > 0) {
+    if (!spindle.permissions.has('regex_scripts')) {
+      throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
+    }
+    const [availableScripts, rawChatMessages] = await Promise.all([
+      getActiveOutgoingRegexScripts(userId, chatId),
+      spindle.chat.getMessages(chatId),
+    ])
+    throwIfAborted(active)
+    const selectedIds = new Set(store.settings.outgoingRegexScriptIds)
+    const selectedScripts = availableScripts.filter((script) => selectedIds.has(script.id))
+    if (selectedScripts.length > 0) {
+      const maxMessageIndex = rawChatMessages.reduce(
+        (maximum, message) => Math.max(maximum, message.index_in_chat + 1),
+        recent.reduce((maximum, message) => Math.max(maximum, message.index), 0),
+      )
+      const reportedWarnings = new Set<string>()
+      formatStoryMessages = (messages) => formatMessages(applyOutgoingRegexToMessages(
+        messages,
+        selectedScripts,
+        maxMessageIndex,
+        (warning) => {
+          if (reportedWarnings.has(warning)) return
+          reportedWarnings.add(warning)
+          spindle.log.warn(`[Threadverse] ${warning}`)
+        },
+      ))
+    }
+  }
+  const unresolvedPrompt = promptForRound(
+    store,
+    chatId,
+    recent,
+    cutoff,
+    installmentLabel,
+    fandomNotesOverride,
+    formatStoryMessages,
+  )
   const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(unresolvedPrompt, {
     chatId,
     userId,

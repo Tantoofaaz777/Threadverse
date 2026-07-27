@@ -46,6 +46,7 @@ export interface ThreadverseStore {
 
 export const DEFAULT_SETTINGS: ThreadverseSettings = {
   connectionId: null,
+  outgoingRegexScriptIds: [],
   maxOutputTokens: null,
   temperature: null,
   topP: null,
@@ -147,6 +148,21 @@ function storedOptionalNumber(
     && (!integer || Number.isInteger(value))
     ? value
     : null
+}
+
+function storedStringIds(value: unknown, limit = 200): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const ids: string[] = []
+  for (const candidate of value) {
+    if (typeof candidate !== 'string') continue
+    const id = candidate.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+    if (ids.length >= limit) break
+  }
+  return ids
 }
 
 function normalizeStoredMessage(value: unknown): ChatMessageSummary | null {
@@ -328,6 +344,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     connectionId: typeof savedWithoutLegacyFields.connectionId === 'string'
       ? savedWithoutLegacyFields.connectionId
       : null,
+    outgoingRegexScriptIds: storedStringIds(savedWithoutLegacyFields.outgoingRegexScriptIds),
     maxOutputTokens: storedOptionalNumber(savedWithoutLegacyFields.maxOutputTokens, 1, 200000, true),
     temperature: storedOptionalNumber(savedWithoutLegacyFields.temperature, 0, 5),
     topP: storedOptionalNumber(savedWithoutLegacyFields.topP, 0, 1),

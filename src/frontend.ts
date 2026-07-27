@@ -15,6 +15,7 @@ import {
   type ConnectionSummary,
   type FeedRound,
   type FrontendToBackendMessage,
+  type RegexScriptSummary,
   type RoundSummary,
   type ThreadverseComment,
   type ThreadverseSettingsPayload,
@@ -539,6 +540,45 @@ const STYLES = `
     line-height: 1.35;
   }
 
+  .threadverse-regex-list {
+    display: grid;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lumiverse-radius, 8px);
+    background: var(--lumiverse-secondary, rgba(128, 128, 128, .15));
+  }
+
+  .threadverse-regex-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    min-height: 38px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--lumiverse-border);
+    cursor: pointer;
+  }
+
+  .threadverse-regex-row:last-child { border-bottom: 0; }
+  .threadverse-regex-row input {
+    margin: 0;
+    accent-color: var(--lumiverse-primary, var(--lumiverse-accent));
+  }
+  .threadverse-regex-copy { display: grid; gap: 2px; min-width: 0; }
+  .threadverse-regex-name {
+    overflow: hidden;
+    color: var(--lumiverse-text);
+    font-size: 11px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .threadverse-regex-meta {
+    color: var(--lumiverse-text-muted);
+    font-size: 9px;
+  }
+
   .threadverse-switch-field {
     display: flex;
     align-items: center;
@@ -719,6 +759,12 @@ export function setup(ctx: SpindleFrontendContext) {
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
+          <h3 class="threadverse-eyebrow">Outgoing Regex</h3>
+          <div data-setting="outgoing-regex"></div>
+          <p class="threadverse-settings-hint">Selected prompt regexes run only on story messages sent in Previous Context and Recent Context.</p>
+        </section>
+
+        <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Feed</h3>
           <div data-setting="feed-font-scale"></div>
         </section>
@@ -815,6 +861,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
+  let settingsRegexScripts: RegexScriptSummary[] = []
   let defaultInstructions = ''
   let fandomThreadsHandle: SpindleNumericInputHandle | null = null
   let instructionPresetHandle: SpindleSelectHandle | null = null
@@ -1020,16 +1067,87 @@ export function setup(ctx: SpindleFrontendContext) {
     }
   }
 
+  function mountOutgoingRegexList(regexScripts: RegexScriptSummary[]): void {
+    const target = settingTarget('outgoing-regex')
+    target.replaceChildren()
+    if (!settingsDraft || regexScripts.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'threadverse-settings-hint'
+      empty.textContent = 'No enabled prompt regex scripts were found in Lumiverse.'
+      target.appendChild(empty)
+      return
+    }
+
+    const visibleIds = new Set(regexScripts.map((script) => script.id))
+    const list = document.createElement('div')
+    list.className = 'threadverse-regex-list'
+    const placementLabels: Record<RegexScriptSummary['placement'][number], string> = {
+      user_input: 'User input',
+      ai_output: 'AI output',
+      world_info: 'System',
+    }
+    const scopeLabels: Record<RegexScriptSummary['scope'], string> = {
+      global: 'Global',
+      character: 'Character',
+      chat: 'Chat',
+    }
+
+    const syncSelection = () => {
+      if (!settingsDraft) return
+      const hiddenSelected = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id))
+      const visibleSelected = Array.from(
+        list.querySelectorAll<HTMLInputElement>('input[data-regex-script-id]:checked'),
+      ).map((input) => input.dataset.regexScriptId!)
+      settingsDraft.outgoingRegexScriptIds = [...hiddenSelected, ...visibleSelected]
+      scheduleAutomaticSave()
+    }
+
+    for (const script of regexScripts) {
+      const row = document.createElement('label')
+      row.className = 'threadverse-regex-row'
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.dataset.regexScriptId = script.id
+      checkbox.checked = settingsDraft.outgoingRegexScriptIds.includes(script.id)
+      checkbox.addEventListener('change', syncSelection)
+
+      const copy = document.createElement('span')
+      copy.className = 'threadverse-regex-copy'
+      const name = document.createElement('span')
+      name.className = 'threadverse-regex-name'
+      name.textContent = script.name
+      const meta = document.createElement('span')
+      meta.className = 'threadverse-regex-meta'
+      const placements = script.placement.map((placement) => placementLabels[placement]).join(' · ')
+      meta.textContent = `${placements} · ${scopeLabels[script.scope]}`
+      copy.append(name, meta)
+      row.append(checkbox, copy)
+      list.appendChild(row)
+    }
+    target.appendChild(list)
+
+    const hiddenCount = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id)).length
+    if (hiddenCount > 0) {
+      const hidden = document.createElement('p')
+      hidden.className = 'threadverse-settings-hint'
+      hidden.textContent = `${hiddenCount} selected regex${hiddenCount === 1 ? ' is' : 'es are'} no longer available.`
+      target.appendChild(hidden)
+    }
+  }
+
   function mountSettingsForm(
     settings: ThreadverseSettingsPayload,
     connections: ConnectionSummary[],
+    regexScripts: RegexScriptSummary[],
   ): void {
     destroySettingsComponents()
     settingsDraft = {
       ...settings,
+      outgoingRegexScriptIds: [...settings.outgoingRegexScriptIds],
       instructionPresets: settings.instructionPresets.map((preset) => ({ ...preset })),
     }
     settingsConnections = connections
+    settingsRegexScripts = regexScripts
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
@@ -1135,6 +1253,7 @@ export function setup(ctx: SpindleFrontendContext) {
     })
 
     maintainFandomToggle.checked = settingsDraft.maintainFandomContinuity
+    mountOutgoingRegexList(regexScripts)
 
     applyFeedFontScale(settingsDraft.feedFontScale)
     const feedFontScaleHandle = ctx.components.mountRangeSlider(settingTarget('feed-font-scale'), {
@@ -1210,6 +1329,7 @@ export function setup(ctx: SpindleFrontendContext) {
       type: 'threadverse:auto_save_settings',
       settings: {
         connectionId: settingsDraft.connectionId,
+        outgoingRegexScriptIds: [...settingsDraft.outgoingRegexScriptIds],
         maxOutputTokens: settingsDraft.maxOutputTokens,
         temperature: settingsDraft.temperature,
         topP: settingsDraft.topP,
@@ -1285,7 +1405,7 @@ export function setup(ctx: SpindleFrontendContext) {
       (preset) => preset.id !== activePreset.id,
     )
     settingsDraft.activeInstructionPresetId = settingsDraft.instructionPresets[0].id
-    mountSettingsForm(settingsDraft, settingsConnections)
+    mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
   }
 
   function expandInstructions(): void {
@@ -2085,7 +2205,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
     if (message.type === 'threadverse:settings_state') {
       defaultInstructions = message.defaultInstructions
-      mountSettingsForm(message.settings, message.connections)
+      mountSettingsForm(message.settings, message.connections, message.regexScripts)
       return
     }
 
@@ -2130,7 +2250,7 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       settingsDraft.instructionPresets.push(preset)
       settingsDraft.activeInstructionPresetId = preset.id
-      mountSettingsForm(settingsDraft, settingsConnections)
+      mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
       return
     }
 
@@ -2141,7 +2261,7 @@ export function setup(ctx: SpindleFrontendContext) {
       )
       if (!preset) return
       preset.name = message.name
-      mountSettingsForm(settingsDraft, settingsConnections)
+      mountSettingsForm(settingsDraft, settingsConnections, settingsRegexScripts)
       return
     }
 

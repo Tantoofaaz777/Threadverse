@@ -54,6 +54,7 @@ export interface FeedRound extends RoundSummary {
 
 export interface ThreadverseSettingsPayload {
   connectionId: string | null
+  outgoingRegexScriptIds: string[]
   maxOutputTokens: number | null
   temperature: number | null
   topP: number | null
@@ -67,6 +68,7 @@ export interface ThreadverseSettingsPayload {
 
 export type ThreadverseAutomaticSettings = Pick<ThreadverseSettingsPayload,
   | 'connectionId'
+  | 'outgoingRegexScriptIds'
   | 'maxOutputTokens'
   | 'temperature'
   | 'topP'
@@ -93,6 +95,13 @@ export interface ConnectionSummary {
   provider: string
   model: string
   isDefault: boolean
+}
+
+export interface RegexScriptSummary {
+  id: string
+  name: string
+  placement: Array<'user_input' | 'ai_output' | 'world_info'>
+  scope: 'global' | 'character' | 'chat'
 }
 
 export type FrontendToBackendMessage =
@@ -164,6 +173,7 @@ export type BackendToFrontendMessage =
       settings: ThreadverseSettingsPayload
       defaultInstructions: string
       connections: ConnectionSummary[]
+      regexScripts: RegexScriptSummary[]
     }
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
   | { type: 'threadverse:instruction_preset_rename'; presetId: string; name: string | null }

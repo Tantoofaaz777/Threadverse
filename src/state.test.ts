@@ -103,12 +103,17 @@ describe('Threadverse continuity', () => {
     const store = normalizeStore({
       version: 1,
       chats: {},
-      settings: { previousRangeLimit: 8, temperature: 0.75 },
+      settings: {
+        previousRangeLimit: 8,
+        temperature: 0.75,
+        outgoingRegexScriptIds: ['regex-1', 'regex-1', '', 42],
+      },
     })
     expect(store.settings.previousRangeLimit).toBe(8)
     expect(store.settings.temperature).toBe(0.75)
     expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
     expect(store.settings.feedFontScale).toBe(DEFAULT_FEED_FONT_SCALE)
+    expect(store.settings.outgoingRegexScriptIds).toEqual(['regex-1'])
     expect(store.settings.instructionPresets).toEqual(DEFAULT_SETTINGS.instructionPresets)
   })
 
@@ -402,6 +407,7 @@ describe('Threadverse continuity', () => {
     current.instructionPresets[0].instructions = 'Prompt draft'
     const next = applyAutomaticSettings(current, {
       connectionId: 'connection-1',
+      outgoingRegexScriptIds: ['regex-1'],
       maxOutputTokens: 8000,
       temperature: 0.8,
       topP: 0.9,
@@ -413,6 +419,7 @@ describe('Threadverse continuity', () => {
     expect(next.instructionPresets[0].instructions).toBe('Prompt draft')
     expect(next.temperature).toBe(0.8)
     expect(next.feedFontScale).toBe(125)
+    expect(next.outgoingRegexScriptIds).toEqual(['regex-1'])
   })
 
   test('prompt saves never overwrite automatic settings', () => {

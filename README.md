@@ -17,6 +17,7 @@ The extension currently includes:
 - previous/recent context display and continuity reset controls that preserve Fandom Notes;
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
+- selectable outgoing Lumiverse prompt regexes applied only to copied story messages in Previous and Recent Context;
 - persisted continuity limits and editable permanent instructions;
 - named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
@@ -24,7 +25,7 @@ The extension currently includes:
 - a prompt builder that groups consecutive story ranges by installment label before fandom continuity, optional fandom notes, and instructions;
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
-- immediately cancellable streamed generation with live estimated output-token progress and atomic round persistence;
+- immediately cancellable streamed generation with separate live estimates for output and reasoning tokens plus atomic round persistence;
 - tolerant validation of a compact JSON feed response, including legacy feed compatibility;
 - feed regeneration that adds a new version without duplicating its continuity round;
 - swipe-style regeneration history where the trailing right arrow creates a new version, with one active version per round and automatic legacy migration;
