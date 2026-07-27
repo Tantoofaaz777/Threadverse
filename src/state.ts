@@ -32,6 +32,8 @@ export interface ChatContinuity {
   chatName: string
   fandomNotes: string
   rounds: StoredRound[]
+  forkSourceChatId?: string
+  forkedAtMessageIndex?: number
 }
 
 export type ThreadverseSettings = ThreadverseSettingsPayload
@@ -239,10 +241,18 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
     const fandomNotes = typeof rawChat.fandomNotes === 'string'
       ? rawChat.fandomNotes
       : existing?.fandomNotes ?? ''
+    const forkSourceChatId = typeof rawChat.forkSourceChatId === 'string' && rawChat.forkSourceChatId
+      ? rawChat.forkSourceChatId
+      : existing?.forkSourceChatId
+    const forkedAtMessageIndex = typeof rawChat.forkedAtMessageIndex === 'number'
+      && Number.isInteger(rawChat.forkedAtMessageIndex)
+      && rawChat.forkedAtMessageIndex >= 0
+      ? rawChat.forkedAtMessageIndex
+      : existing?.forkedAtMessageIndex
     const recoveredRounds = rawChat.rounds
       .map((round, index) => normalizeStoredRound(round, index + 1))
       .filter((round): round is StoredRound => Boolean(round))
-    if (recoveredRounds.length === 0 && !fandomNotes.trim()) continue
+    if (recoveredRounds.length === 0 && !fandomNotes.trim() && !forkSourceChatId) continue
     const chatId = existingChatId
     if (!chatId) continue
     const rounds = existing ? [...existing.rounds, ...recoveredRounds] : recoveredRounds
@@ -264,6 +274,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
         : existing?.chatName ?? 'Untitled chat',
       fandomNotes,
       rounds: uniqueRounds,
+      ...(forkSourceChatId ? { forkSourceChatId, forkedAtMessageIndex } : {}),
     }
   }
   return chats
@@ -395,7 +406,7 @@ export function resetContinuityRounds(
 ): void {
   const existing = store.chats[chatId]
   const preservedNotes = fandomNotes ?? existing?.fandomNotes ?? ''
-  if (!preservedNotes.trim()) {
+  if (!preservedNotes.trim() && !existing?.forkSourceChatId) {
     delete store.chats[chatId]
     return
   }
@@ -404,6 +415,12 @@ export function resetContinuityRounds(
     chatName: chatName || existing?.chatName || 'Untitled chat',
     fandomNotes: preservedNotes,
     rounds: [],
+    ...(existing?.forkSourceChatId
+      ? {
+          forkSourceChatId: existing.forkSourceChatId,
+          forkedAtMessageIndex: existing.forkedAtMessageIndex,
+        }
+      : {}),
   }
 }
 

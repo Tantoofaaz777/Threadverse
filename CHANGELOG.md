@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- Inherit Threadverse continuity and Fandom Notes when a Lumiverse chat is forked.
+- Remap copied rounds to the fork's new message IDs while excluding any round that crosses the fork point.
+- Preserve feed swipe history with independent round and version IDs in the fork.
+- Recover missed, existing, and nested forks from Lumiverse branch metadata when they are opened.
+- Remember completed inheritance so resetting or deleting a fork's continuity never imports it again.
+
 ## 1.3.1
 
 - Remove redundant `FANDOM THREAD N` prefixes from Fandom Continuity headings.

@@ -36,6 +36,14 @@ import {
   type StoredRound,
   type ThreadverseStore,
 } from './state'
+import {
+  inheritContinuityForFork,
+  type ForkMessageReference,
+} from './fork-inheritance'
+import type {
+  ChatDTO,
+  ChatForkedPayloadDTO,
+} from 'lumiverse-spindle-types'
 
 declare const spindle: import('lumiverse-spindle-types').SpindleAPI
 
@@ -119,6 +127,103 @@ async function queueStoreWrite(userId: string, operation: () => Promise<void>): 
 
 function hasChatPermissions(): boolean {
   return spindle.permissions.has('chats') && spindle.permissions.has('chat_mutation')
+}
+
+interface ForkInheritanceHint {
+  sourceChatId: string
+  forkedChatId: string
+  forkedAtMessageIndex: number
+}
+
+interface ForkInheritanceSummary {
+  changed: boolean
+  inheritedRoundCount: number
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key]
+  return typeof value === 'string' && value ? value : null
+}
+
+async function ensureForkContinuity(
+  targetChat: ChatDTO,
+  userId: string,
+  targetMessages?: ForkMessageReference[],
+  hint?: ForkInheritanceHint,
+): Promise<ForkInheritanceSummary> {
+  const summary: ForkInheritanceSummary = { changed: false, inheritedRoundCount: 0 }
+
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const visiting = new Set<string>()
+
+    const inheritChat = async (
+      chat: ChatDTO,
+      knownMessages?: ForkMessageReference[],
+      eventHint?: ForkInheritanceHint,
+    ): Promise<void> => {
+      if (store.chats[chat.id]?.forkSourceChatId) return
+
+      const sourceChatId = eventHint?.forkedChatId === chat.id
+        ? eventHint.sourceChatId
+        : metadataString(chat.metadata, 'branched_from')
+      if (!sourceChatId || sourceChatId === chat.id) return
+      if (visiting.has(chat.id)) {
+        spindle.log.warn(`[Threadverse] Ignored cyclic fork metadata for chat ${chat.id}.`)
+        return
+      }
+
+      visiting.add(chat.id)
+      try {
+        const sourceChat = await spindle.chats.get(sourceChatId, userId)
+        if (!sourceChat) return
+
+        // Recover the source first so a fork of a fork inherits the complete
+        // continuity chain rather than only rounds created in its direct parent.
+        await inheritChat(sourceChat)
+
+        const sourceMessages = await spindle.chat.getMessages(sourceChatId)
+        const forkMessages = knownMessages ?? await spindle.chat.getMessages(chat.id)
+        let forkedAtMessageIndex: number | undefined
+        if (eventHint?.forkedChatId === chat.id) {
+          forkedAtMessageIndex = eventHint.forkedAtMessageIndex
+        } else {
+          const branchAtMessageId = metadataString(chat.metadata, 'branch_at_message')
+          forkedAtMessageIndex = branchAtMessageId
+            ? sourceMessages.find((message) => message.id === branchAtMessageId)?.index_in_chat
+            : undefined
+        }
+        if (forkedAtMessageIndex === undefined) {
+          spindle.log.warn(`[Threadverse] Could not resolve the fork point for chat ${chat.id}.`)
+          return
+        }
+
+        const result = inheritContinuityForFork({
+          source: store.chats[sourceChatId],
+          existing: store.chats[chat.id],
+          forkChatId: chat.id,
+          forkChatName: chat.name,
+          sourceChatId,
+          sourceMessages,
+          forkMessages,
+          forkedAtMessageIndex,
+          forkedAtUnixSeconds: chat.created_at,
+          idFactory: () => crypto.randomUUID(),
+        })
+        if (result.alreadyInherited) return
+        store.chats[chat.id] = result.continuity
+        summary.changed = true
+        summary.inheritedRoundCount += result.inheritedRoundCount
+      } finally {
+        visiting.delete(chat.id)
+      }
+    }
+
+    await inheritChat(targetChat, targetMessages, hint)
+    if (summary.changed) await saveStore(store, userId)
+  })
+
+  return summary
 }
 
 function toConnectionSummary(connection: { id: string; name: string; provider: string; model: string; is_default: boolean }): ConnectionSummary {
@@ -232,7 +337,9 @@ async function sendActiveChat(
     send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
     return
   }
-  const [rawMessages, store] = await Promise.all([spindle.chat.getMessages(activeChat.id), loadStore(userId)])
+  const rawMessages = await spindle.chat.getMessages(activeChat.id)
+  await ensureForkContinuity(activeChat, userId, rawMessages)
+  const store = await loadStore(userId)
   const continuity = store.chats[activeChat.id]
   send({
     type: 'threadverse:active_chat', chat: { id: activeChat.id, name: activeChat.name },
@@ -572,7 +679,11 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
     deletedSequence = continuity.rounds[index].sequence
     continuity.rounds.splice(index, 1)
     continuity.rounds.forEach((round, roundIndex) => { round.sequence = roundIndex + 1 })
-    if (continuity.rounds.length === 0 && !continuity.fandomNotes.trim()) delete store.chats[chatId]
+    if (
+      continuity.rounds.length === 0
+      && !continuity.fandomNotes.trim()
+      && !continuity.forkSourceChatId
+    ) delete store.chats[chatId]
     await saveStore(store, userId)
   })
   await finishSuccessfulMutation(
@@ -613,7 +724,11 @@ async function saveFandomNotes(
     const continuity = store.chats[chatId] ?? { chatId, chatName, fandomNotes: '', rounds: [] }
     continuity.chatName = chatName || continuity.chatName
     continuity.fandomNotes = notes
-    if (continuity.rounds.length === 0 && !notes.trim()) delete store.chats[chatId]
+    if (
+      continuity.rounds.length === 0
+      && !notes.trim()
+      && !continuity.forkSourceChatId
+    ) delete store.chats[chatId]
     else store.chats[chatId] = continuity
     await saveStore(store, userId)
   })
@@ -760,6 +875,27 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     spindle.toast.error(message, { userId }); send({ type: 'threadverse:operation_error', error: message }, userId)
   }
+})
+
+async function inheritForkFromEvent(payload: ChatForkedPayloadDTO, userId: string): Promise<void> {
+  const forkedChat = await spindle.chats.get(payload.forkedChatId, userId)
+  if (!forkedChat) return
+  await ensureForkContinuity(forkedChat, userId, undefined, {
+    sourceChatId: payload.sourceChatId,
+    forkedChatId: payload.forkedChatId,
+    forkedAtMessageIndex: payload.forkedAtMessageIndex,
+  })
+}
+
+spindle.on('CHAT_FORKED', (payload, userId) => {
+  if (!userId) {
+    spindle.log.warn('[Threadverse] CHAT_FORKED arrived without a user id; lazy fork recovery will handle it.')
+    return
+  }
+  void inheritForkFromEvent(payload, userId).catch((error) => {
+    const message = error instanceof Error ? error.message : 'Unknown fork inheritance error.'
+    spindle.log.error(`[Threadverse] Could not inherit fork continuity: ${message}`)
+  })
 })
 
 spindle.permissions.onChanged(({ permission, granted }) => spindle.log.info(`[Threadverse] Permission ${permission} ${granted ? 'granted' : 'revoked'}`))

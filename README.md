@@ -13,6 +13,7 @@ The extension currently includes:
 - active-chat message loading and success-themed range selection;
 - optional free-form title, episode, or chapter labels stored with each selected round;
 - per-user, per-chat chronological round persistence;
+- automatic fork inheritance for complete pre-fork rounds, feed swipes, and Fandom Notes, including nested and previously created forks;
 - previous/recent context display and continuity reset controls that preserve Fandom Notes;
 - existing Lumiverse connection selection, using the model configured on that connection;
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
