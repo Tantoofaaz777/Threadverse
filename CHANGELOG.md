@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0
+
+- Replace recursively nested generated comments with compact positional rows whose parent index identifies the exact comment being answered.
+- Reconstruct the reply tree deterministically while keeping legacy generated and saved feed objects compatible.
+- Reject invalid, forward, and excessively deep parent references.
+- Reject new discussions with fewer than 35% replies or too few distinct replied-to top-level conversations.
+
 ## 1.5.1
 
 - Show every Lumiverse regex that can affect story messages, regardless of its native enabled state, target, or scope.

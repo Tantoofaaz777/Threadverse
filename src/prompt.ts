@@ -59,13 +59,16 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
   "title": "thread title",
   "post": { "username": "name", "body": "text", "score": 0 },
   "comments": [
-    { "username": "name", "body": "text", "score": 0 },
-    { "username": "name", "body": "text", "score": 0, "replies": [
-      { "username": "name", "body": "text", "score": 0 }
-    ] }
+    [-1, "root_a", "independent top-level comment", 120],
+    [0, "reply_a", "reply to comment 0", 45],
+    [1, "root_a", "reply to comment 1", 31],
+    [-1, "root_b", "another independent top-level comment", 90],
+    [3, "reply_b", "reply to comment 3", 28],
+    [-1, "root_c", "another independent top-level comment", 70],
+    [5, "reply_c", "reply to comment 5", 19]
   ]
 }
-Reply nesting is semantic: every reply MUST be inside the "replies" array of the exact comment it answers. Items in the same array are sibling replies to the same parent.
+Each comment row is exactly [parent, username, body, score]. parent is -1 ONLY for a genuinely independent top-level comment; otherwise it is the zero-based index of the exact earlier comment being answered. At least 35% of all comment rows must be replies. With 6 or more comments, at least 3 different top-level conversations must receive replies. Threadverse rejects flatter results.
 Return ONLY the JSON—no explanations, no notes, no commentary.`,
   ].join('\n\n')
 }

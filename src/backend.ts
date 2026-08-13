@@ -13,7 +13,7 @@ import {
   type ThreadverseFeed,
   type ThreadversePromptSettings,
 } from './shared'
-import { parseThreadverseFeed, serializeFeedForContinuity } from './feed'
+import { parseGeneratedThreadverseFeed, serializeFeedForContinuity } from './feed'
 import { applyOutgoingRegexToMessages } from './outgoing-regex'
 import {
   buildThreadversePrompt,
@@ -576,7 +576,7 @@ async function runGeneration(
   throwIfAborted(active)
   reportProgress(true)
   if (content === null) throw new Error('Lumiverse ended the generation without a final response.')
-  return parseThreadverseFeed(generationContent({ content }))
+  return parseGeneratedThreadverseFeed(generationContent({ content }))
 }
 
 async function finishSuccessfulGeneration(

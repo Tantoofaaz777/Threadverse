@@ -26,7 +26,7 @@ The extension currently includes:
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
 - immediately cancellable streamed generation with separate live estimates for output and reasoning tokens plus atomic round persistence;
-- tolerant validation of a compact JSON feed response, including legacy feed compatibility;
+- positional parent-index JSON for deterministic reply trees, with strict anti-flatness validation and legacy feed compatibility;
 - feed regeneration that adds a new version without duplicating its continuity round;
 - swipe-style regeneration history where the trailing right arrow creates a new version, with one active version per round and automatic legacy migration;
 - silent inactive-version pruning outside the configured fandom continuity window;

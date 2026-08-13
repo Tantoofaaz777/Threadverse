@@ -22,6 +22,99 @@ function scoreFrom(object: JsonObject): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0
 }
 
+function positionalString(value: unknown, label: string): string {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  throw new Error(`${label} is missing.`)
+}
+
+function positionalScore(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0
+}
+
+interface NestingStats {
+  total: number
+  replies: number
+  conversationsWithReplies: number
+}
+
+function nestingStats(comments: ThreadverseComment[]): NestingStats {
+  let total = 0
+  let replies = 0
+  let conversationsWithReplies = 0
+
+  const visit = (items: ThreadverseComment[], depth: number) => {
+    for (const comment of items) {
+      total += 1
+      if (depth > 0) replies += 1
+      visit(comment.replies, depth + 1)
+    }
+  }
+
+  for (const comment of comments) {
+    if (comment.replies.length > 0) conversationsWithReplies += 1
+    visit([comment], 0)
+  }
+  return { total, replies, conversationsWithReplies }
+}
+
+function requireDiscussionNesting(comments: ThreadverseComment[]): void {
+  const stats = nestingStats(comments)
+  if (stats.total < 2) return
+
+  const requiredReplies = Math.min(
+    stats.total - 1,
+    Math.max(1, Math.ceil(stats.total * 0.35)),
+  )
+  if (stats.replies < requiredReplies) {
+    throw new Error(
+      `The model returned a flat discussion: ${stats.replies} of ${stats.total} comments are replies, but at least ${requiredReplies} are required.`,
+    )
+  }
+
+  const requiredConversations = Math.min(3, Math.floor(stats.total / 2))
+  if (stats.conversationsWithReplies < requiredConversations) {
+    throw new Error(
+      `The model replied within only ${stats.conversationsWithReplies} top-level conversation${stats.conversationsWithReplies === 1 ? '' : 's'}; at least ${requiredConversations} are required.`,
+    )
+  }
+}
+
+function parsePositionalComments(rawComments: unknown[]): ThreadverseComment[] {
+  if (rawComments.length > 500) throw new Error('The generated comment tree is too large.')
+  const roots: ThreadverseComment[] = []
+  const comments: ThreadverseComment[] = []
+  const depths: number[] = []
+
+  rawComments.forEach((value, index) => {
+    if (!Array.isArray(value) || value.length !== 4) {
+      throw new Error(`Comment ${index} must be [parent, username, body, score].`)
+    }
+    const [parent, username, body, score] = value
+    if (
+      typeof parent !== 'number'
+      || !Number.isInteger(parent)
+      || (parent !== -1 && (parent < 0 || parent >= index))
+    ) {
+      throw new Error(`Comment ${index} has an invalid parent index.`)
+    }
+
+    const depth = parent === -1 ? 0 : depths[parent] + 1
+    if (depth > 12) throw new Error('The generated comment tree is too large.')
+    const comment: ThreadverseComment = {
+      username: positionalString(username, `Comment ${index} username`),
+      body: positionalString(body, `Comment ${index} body`),
+      score: positionalScore(score),
+      replies: [],
+    }
+    comments.push(comment)
+    depths.push(depth)
+    if (parent === -1) roots.push(comment)
+    else comments[parent].replies.push(comment)
+  })
+
+  return roots
+}
+
 function extractJsonObject(text: string): string {
   const unfenced = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
   const start = unfenced.indexOf('{')
@@ -72,6 +165,10 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
     }
   }
 
+  const comments = rawComments.some((comment) => Array.isArray(comment))
+    ? parsePositionalComments(rawComments)
+    : rawComments.map((comment) => parseComment(comment, 0))
+
   return {
     title: stringFrom(root, ['title'], 'Thread title'),
     post: {
@@ -79,8 +176,14 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
       body: stringFrom(post, ['body', 'content', 'text'], 'Post body'),
       score: scoreFrom(post),
     },
-    comments: rawComments.map((comment) => parseComment(comment, 0)),
+    comments,
   }
+}
+
+export function parseGeneratedThreadverseFeed(text: string): ThreadverseFeed {
+  const feed = parseThreadverseFeed(text)
+  requireDiscussionNesting(feed.comments)
+  return feed
 }
 
 export function serializeFeedForContinuity(feed: ThreadverseFeed): string {

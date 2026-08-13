@@ -4,7 +4,12 @@ import {
   groupConsecutiveStoryRanges,
   installmentOrRoundLabel,
 } from './prompt'
-import { parseThreadverseFeed, serializeFeedAsPlainText, serializeFeedForContinuity } from './feed'
+import {
+  parseGeneratedThreadverseFeed,
+  parseThreadverseFeed,
+  serializeFeedAsPlainText,
+  serializeFeedForContinuity,
+} from './feed'
 import { toggleRangeEndpoint } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { resolveFeedSwipe } from './feed-swipe'
@@ -519,9 +524,10 @@ describe('Threadverse continuity', () => {
     expect(outputFormat).toContain('"username"')
     expect(outputFormat).toContain('"body"')
     expect(outputFormat).toContain('"score"')
-    expect(outputFormat).toContain('"replies"')
-    expect(outputFormat).toContain('every reply MUST be inside the "replies" array of the exact comment it answers')
-    expect(outputFormat).toContain('Items in the same array are sibling replies to the same parent')
+    expect(outputFormat).toContain('[parent, username, body, score]')
+    expect(outputFormat).toContain('zero-based index of the exact earlier comment being answered')
+    expect(outputFormat).toContain('At least 35% of all comment rows must be replies')
+    expect(outputFormat).not.toContain('"replies"')
     expect(outputFormat).not.toContain('"subreddit"')
     expect(outputFormat).not.toContain('"flair"')
     expect(outputFormat).not.toContain('"timestamp"')
@@ -538,6 +544,77 @@ describe('Threadverse continuity', () => {
     expect(feed).not.toHaveProperty('subreddit')
     expect(feed.post).not.toHaveProperty('flair')
     expect(feed.comments[0]).not.toHaveProperty('id')
+  })
+
+  test('reconstructs positional parent indexes into the exact reply tree', () => {
+    const feed = parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Episode discussion',
+      post: { username: 'OP', body: 'Opening', score: 100 },
+      comments: [
+        [-1, 'root-a', 'Root A', 50],
+        [0, 'reply-a', 'Reply to A', 30],
+        [1, 'reply-a-2', 'Reply to the reply', 20],
+        [-1, 'root-b', 'Root B', 45],
+        [3, 'reply-b', 'Reply to B', 25],
+        [-1, 'root-c', 'Root C', 40],
+        [5, 'reply-c', 'Reply to C', 15],
+      ],
+    }))
+
+    expect(feed.comments.map((comment) => comment.username)).toEqual(['root-a', 'root-b', 'root-c'])
+    expect(feed.comments[0].replies[0].username).toBe('reply-a')
+    expect(feed.comments[0].replies[0].replies[0].username).toBe('reply-a-2')
+    expect(feed.comments[1].replies[0].username).toBe('reply-b')
+    expect(feed.comments[2].replies[0].username).toBe('reply-c')
+  })
+
+  test('rejects a generated discussion that is too flat', () => {
+    const positionalComments = Array.from({ length: 10 }, (_, index) => [
+      -1,
+      `user-${index}`,
+      `Comment ${index}`,
+      index,
+    ])
+
+    expect(() => parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Flat discussion',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: positionalComments,
+    }))).toThrow('flat discussion')
+
+    const legacyComments = Array.from({ length: 10 }, (_, index) => ({
+      username: `legacy-${index}`,
+      body: `Comment ${index}`,
+      score: index,
+    }))
+    expect(() => parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Flat legacy discussion',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: legacyComments,
+    }))).toThrow('flat discussion')
+  })
+
+  test('requires replies across separate top-level conversations', () => {
+    expect(() => parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Single branch',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [-1, 'root', 'Root', 10],
+        [0, 'reply-1', 'Reply 1', 9],
+        [1, 'reply-2', 'Reply 2', 8],
+        [2, 'reply-3', 'Reply 3', 7],
+        [3, 'reply-4', 'Reply 4', 6],
+        [4, 'reply-5', 'Reply 5', 5],
+      ],
+    }))).toThrow('at least 3 are required')
+  })
+
+  test('rejects positional comments that point to a future parent', () => {
+    expect(() => parseThreadverseFeed(JSON.stringify({
+      title: 'Invalid parent',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [[1, 'reply', 'Impossible reply', 1]],
+    }))).toThrow('invalid parent index')
   })
 
   test('serializes compact fandom continuity text with scores in reading order', () => {
