@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.1
+
+- Limit the Outgoing Regex selector and execution to Lumiverse prompt-target scripts that affect story messages.
+- Simplify each regex option to its name only and remove the explanatory footer.
+
 ## 1.6.0
 
 - Replace recursively nested generated comments with compact positional rows whose parent index identifies the exact comment being answered.

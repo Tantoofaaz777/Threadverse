@@ -565,18 +565,14 @@ const STYLES = `
     margin: 0;
     accent-color: var(--lumiverse-primary, var(--lumiverse-accent));
   }
-  .threadverse-regex-copy { display: grid; gap: 2px; min-width: 0; }
   .threadverse-regex-name {
+    min-width: 0;
     overflow: hidden;
     color: var(--lumiverse-text);
     font-size: 11px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .threadverse-regex-meta {
-    color: var(--lumiverse-text-muted);
-    font-size: 9px;
   }
 
   .threadverse-switch-field {
@@ -761,7 +757,6 @@ export function setup(ctx: SpindleFrontendContext) {
         <section class="threadverse-card threadverse-settings-section">
           <h3 class="threadverse-eyebrow">Outgoing Regex</h3>
           <div data-setting="outgoing-regex"></div>
-          <p class="threadverse-settings-hint">Selected regexes run as Outgoing only on story messages sent in Previous Context and Recent Context.</p>
         </section>
 
         <section class="threadverse-card threadverse-settings-section">
@@ -1085,7 +1080,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (regexScripts.length === 0) {
       const empty = document.createElement('p')
       empty.className = 'threadverse-settings-hint'
-      empty.textContent = 'No regex scripts that can affect story messages were found in Lumiverse.'
+      empty.textContent = 'No prompt regex scripts that affect story messages were found in Lumiverse.'
       target.appendChild(empty)
       return
     }
@@ -1093,11 +1088,6 @@ export function setup(ctx: SpindleFrontendContext) {
     const visibleIds = new Set(regexScripts.map((script) => script.id))
     const list = document.createElement('div')
     list.className = 'threadverse-regex-list'
-    const placementLabels: Record<RegexScriptSummary['placement'][number], string> = {
-      user_input: 'User input',
-      ai_output: 'AI output',
-      world_info: 'System',
-    }
     const syncSelection = () => {
       if (!settingsDraft) return
       const hiddenSelected = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id))
@@ -1117,17 +1107,10 @@ export function setup(ctx: SpindleFrontendContext) {
       checkbox.checked = settingsDraft.outgoingRegexScriptIds.includes(script.id)
       checkbox.addEventListener('change', syncSelection)
 
-      const copy = document.createElement('span')
-      copy.className = 'threadverse-regex-copy'
       const name = document.createElement('span')
       name.className = 'threadverse-regex-name'
       name.textContent = script.name
-      const meta = document.createElement('span')
-      meta.className = 'threadverse-regex-meta'
-      const placements = script.placement.map((placement) => placementLabels[placement]).join(' · ')
-      meta.textContent = placements
-      copy.append(name, meta)
-      row.append(checkbox, copy)
+      row.append(checkbox, name)
       list.appendChild(row)
     }
     target.appendChild(list)

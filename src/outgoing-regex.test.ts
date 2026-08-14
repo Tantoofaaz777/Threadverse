@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { RegexScriptDTO } from 'lumiverse-spindle-types'
 import type { ChatMessageSummary } from './shared'
-import { applyOutgoingRegexToMessages } from './outgoing-regex'
+import { applyOutgoingRegexToMessages, isOutgoingPromptRegexScript } from './outgoing-regex'
 
 function regexScript(overrides: Partial<RegexScriptDTO>): RegexScriptDTO {
   return {
@@ -44,10 +44,16 @@ describe('outgoing story regex', () => {
     expect(messages.map((message) => message.content)).toEqual(['foo user', 'foo assistant'])
   })
 
-  test('uses a selected script as outgoing regardless of its native target or scope', () => {
+  test('recognizes only prompt regexes that can affect story messages', () => {
+    expect(isOutgoingPromptRegexScript(regexScript({ target: 'prompt' }))).toBe(true)
+    expect(isOutgoingPromptRegexScript(regexScript({ target: 'response' }))).toBe(false)
+    expect(isOutgoingPromptRegexScript(regexScript({ target: 'display' }))).toBe(false)
+    expect(isOutgoingPromptRegexScript(regexScript({ target: 'prompt', placement: ['reasoning'] }))).toBe(false)
+  })
+
+  test('uses a selected prompt script regardless of its native scope or enabled state', () => {
     const result = applyOutgoingRegexToMessages(messages, [
       regexScript({
-        target: 'response',
         scope: 'character',
         scope_id: 'character-1',
         disabled: true,

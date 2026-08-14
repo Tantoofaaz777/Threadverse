@@ -2,8 +2,14 @@ import type { RegexPlacementDTO, RegexScriptDTO } from 'lumiverse-spindle-types'
 import type { ChatMessageSummary } from './shared'
 
 const REGEX_INPUT_MAX_CHARS = 500_000
+const STORY_REGEX_PLACEMENTS = new Set<RegexPlacementDTO>(['user_input', 'ai_output', 'world_info'])
 
 type RegexWarning = (message: string) => void
+
+export function isOutgoingPromptRegexScript(script: RegexScriptDTO): boolean {
+  return script.target === 'prompt'
+    && script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement))
+}
 
 function placementForMessage(message: ChatMessageSummary): RegexPlacementDTO {
   if (message.role === 'user') return 'user_input'

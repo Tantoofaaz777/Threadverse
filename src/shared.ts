@@ -100,8 +100,6 @@ export interface ConnectionSummary {
 export interface RegexScriptSummary {
   id: string
   name: string
-  placement: Array<'user_input' | 'ai_output' | 'world_info'>
-  scope: 'global' | 'character' | 'chat'
 }
 
 export type FrontendToBackendMessage =

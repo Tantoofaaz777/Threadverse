@@ -14,7 +14,7 @@ import {
   type ThreadversePromptSettings,
 } from './shared'
 import { parseGeneratedThreadverseFeed, serializeFeedForContinuity } from './feed'
-import { applyOutgoingRegexToMessages } from './outgoing-regex'
+import { applyOutgoingRegexToMessages, isOutgoingPromptRegexScript } from './outgoing-regex'
 import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
@@ -238,27 +238,20 @@ async function getConnections(userId: string): Promise<ConnectionSummary[]> {
   return (await spindle.connections.list(userId)).map(toConnectionSummary)
 }
 
-const STORY_REGEX_PLACEMENTS = new Set(['user_input', 'ai_output', 'world_info'])
-
 function toRegexScriptSummary(script: RegexScriptDTO): RegexScriptSummary {
   return {
     id: script.id,
     name: script.name,
-    placement: script.placement.filter(
-      (placement): placement is RegexScriptSummary['placement'][number] => STORY_REGEX_PLACEMENTS.has(placement),
-    ),
-    scope: script.scope,
   }
 }
 
 async function getOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
   const result = await spindle.regex_scripts.list({
+    target: 'prompt',
     limit: 200,
     userId,
   })
-  return result.data.filter(
-    (script) => script.placement.some((placement) => STORY_REGEX_PLACEMENTS.has(placement)),
-  )
+  return result.data.filter(isOutgoingPromptRegexScript)
 }
 
 async function listOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
