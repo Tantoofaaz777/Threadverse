@@ -14,7 +14,11 @@ import {
   type ThreadversePromptSettings,
 } from './shared'
 import { parseGeneratedThreadverseFeed, serializeFeedForContinuity } from './feed'
-import { applyOutgoingRegexToMessages, isOutgoingPromptRegexScript } from './outgoing-regex'
+import {
+  applyOutgoingRegexToMessages,
+  compareRegexScripts,
+  regexAppliesToChat,
+} from './outgoing-regex'
 import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
@@ -245,19 +249,39 @@ function toRegexScriptSummary(script: RegexScriptDTO): RegexScriptSummary {
   }
 }
 
-async function getOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
-  const result = await spindle.regex_scripts.list({
-    target: 'prompt',
-    limit: 200,
-    userId,
-  })
-  return result.data.filter(isOutgoingPromptRegexScript)
+async function getOutgoingRegexScripts(
+  chat: { id: string; character_id?: string | null } | null,
+  userId: string,
+): Promise<RegexScriptDTO[]> {
+  const scripts: RegexScriptDTO[] = []
+  const limit = 200
+  let offset = 0
+  let total = 0
+  do {
+    const page = await spindle.regex_scripts.list({
+      target: 'prompt',
+      limit,
+      offset,
+      userId,
+    })
+    scripts.push(...page.data)
+    total = page.total
+    offset += page.data.length
+    if (page.data.length === 0) break
+  } while (offset < total)
+
+  return scripts
+    .filter((script) => regexAppliesToChat(script, chat))
+    .sort(compareRegexScripts)
 }
 
-async function listOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[]> {
+async function listOutgoingRegexScripts(
+  chat: { id: string; character_id?: string | null } | null,
+  userId: string,
+): Promise<RegexScriptDTO[]> {
   if (!spindle.permissions.has('regex_scripts')) return []
   try {
-    return await getOutgoingRegexScripts(userId)
+    return await getOutgoingRegexScripts(chat, userId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown regex listing error.'
     spindle.log.warn(`[Threadverse] Could not load outgoing regex scripts: ${message}`)
@@ -266,11 +290,12 @@ async function listOutgoingRegexScripts(userId: string): Promise<RegexScriptDTO[
 }
 
 async function sendSettingsState(userId: string): Promise<void> {
-  const [store, connections, outgoingRegexScripts] = await Promise.all([
+  const [store, connections, chat] = await Promise.all([
     loadStore(userId),
     getConnections(userId),
-    listOutgoingRegexScripts(userId),
+    spindle.chats.getActive(userId),
   ])
+  const outgoingRegexScripts = await listOutgoingRegexScripts(chat, userId)
   const settings = { ...store.settings }
   const selected = connections.find((item) => item.id === settings.connectionId)
     ?? connections.find((item) => item.isDefault) ?? connections[0]
@@ -471,10 +496,11 @@ async function runGeneration(
     if (!spindle.permissions.has('regex_scripts')) {
       throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
     }
-    const [availableScripts, rawChatMessages] = await Promise.all([
-      getOutgoingRegexScripts(userId),
+    const [chat, rawChatMessages] = await Promise.all([
+      spindle.chats.get(chatId, userId),
       spindle.chat.getMessages(chatId),
     ])
+    const availableScripts = await getOutgoingRegexScripts(chat, userId)
     throwIfAborted(active)
     const selectedIds = new Set(store.settings.outgoingRegexScriptIds)
     const selectedScripts = availableScripts.filter((script) => selectedIds.has(script.id))

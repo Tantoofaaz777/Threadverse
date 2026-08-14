@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { RegexScriptDTO } from 'lumiverse-spindle-types'
 import type { ChatMessageSummary } from './shared'
-import { applyOutgoingRegexToMessages, isOutgoingPromptRegexScript } from './outgoing-regex'
+import {
+  applyOutgoingRegexToMessages,
+  compareRegexScripts,
+  regexAppliesToChat,
+} from './outgoing-regex'
 
 function regexScript(overrides: Partial<RegexScriptDTO>): RegexScriptDTO {
   return {
@@ -44,11 +48,29 @@ describe('outgoing story regex', () => {
     expect(messages.map((message) => message.content)).toEqual(['foo user', 'foo assistant'])
   })
 
-  test('recognizes only prompt regexes that can affect story messages', () => {
-    expect(isOutgoingPromptRegexScript(regexScript({ target: 'prompt' }))).toBe(true)
-    expect(isOutgoingPromptRegexScript(regexScript({ target: 'response' }))).toBe(false)
-    expect(isOutgoingPromptRegexScript(regexScript({ target: 'display' }))).toBe(false)
-    expect(isOutgoingPromptRegexScript(regexScript({ target: 'prompt', placement: ['reasoning'] }))).toBe(false)
+  test('matches global, character, and chat scopes against the active chat', () => {
+    const chat = { id: 'chat-1', character_id: 'character-1' }
+    expect(regexAppliesToChat(regexScript({ scope: 'global' }), chat)).toBe(true)
+    expect(regexAppliesToChat(regexScript({ scope: 'character', scope_id: 'character-1' }), chat)).toBe(true)
+    expect(regexAppliesToChat(regexScript({ scope: 'character', scope_id: 'character-2' }), chat)).toBe(false)
+    expect(regexAppliesToChat(regexScript({ scope: 'chat', scope_id: 'chat-1' }), chat)).toBe(true)
+    expect(regexAppliesToChat(regexScript({ scope: 'chat', scope_id: 'chat-2' }), chat)).toBe(false)
+    expect(regexAppliesToChat(regexScript({ scope: 'character', scope_id: 'character-1' }), null)).toBe(false)
+  })
+
+  test('sorts scripts by native scope and script order', () => {
+    const scripts = [
+      regexScript({ id: 'chat', scope: 'chat', sort_order: 0 }),
+      regexScript({ id: 'global-late', scope: 'global', sort_order: 2 }),
+      regexScript({ id: 'character', scope: 'character', sort_order: 0 }),
+      regexScript({ id: 'global-first', scope: 'global', sort_order: 1 }),
+    ].sort(compareRegexScripts)
+    expect(scripts.map((script) => script.id)).toEqual([
+      'global-first',
+      'global-late',
+      'character',
+      'chat',
+    ])
   })
 
   test('uses a selected prompt script regardless of its native scope or enabled state', () => {

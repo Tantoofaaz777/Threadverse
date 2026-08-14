@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.2
+
+- Load prompt regexes through the same Spindle-filtered pipeline used by SummaryPlus, without rechecking the host's multi-target representation as a scalar.
+- Respect global, active-character, and active-chat regex scopes while preserving native scope and script order.
+- Load every result page instead of silently stopping after the first 200 scripts.
+
 ## 1.6.1
 
 - Limit the Outgoing Regex selector and execution to Lumiverse prompt-target scripts that affect story messages.
