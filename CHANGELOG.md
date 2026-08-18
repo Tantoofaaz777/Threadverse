@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.5
+
+- Update `lumiverse-spindle-types` from 0.6.8 to 0.6.16 to match Lumiverse 1.1.6.
+- Update the regex test fixture for the current ownership-aware `RegexScriptDTO` contract.
+
 ## 1.6.4
 
 - Reconstruct reply trees even when the model emits a child row before its parent row.

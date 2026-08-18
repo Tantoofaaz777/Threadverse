@@ -10,6 +10,7 @@ import {
 function regexScript(overrides: Partial<RegexScriptDTO>): RegexScriptDTO {
   return {
     id: 'regex-1',
+    can_mutate: true,
     name: 'Test regex',
     script_id: '',
     find_regex: 'foo',

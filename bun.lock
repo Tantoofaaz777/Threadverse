@@ -6,7 +6,7 @@
       "name": "threadverse",
       "devDependencies": {
         "bun-types": "^1.3.10",
-        "lumiverse-spindle-types": "0.6.8",
+        "lumiverse-spindle-types": "0.6.16",
         "typescript": "^6.0.2",
       },
     },
@@ -16,7 +16,7 @@
 
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
-    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.6.8", "", {}, "sha512-CGRhLCjefnFAhQKDPwDbA44WS1rWZaR54lZV6RtHr0U8QawfwM4EhB1gBP579meN3OHOhO883MiYGM/Ua3Uh0g=="],
+    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.6.16", "", {}, "sha512-b4qzv+Gdu46sxRNnvG46Xq7B68vLbchH48j6qUlb8Ae+Fq9tq8zUJDw2udryFiUaNnk7Ep5WpV4DyaxfoYy9ug=="],
 
     "typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
