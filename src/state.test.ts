@@ -529,8 +529,8 @@ describe('Threadverse continuity', () => {
     expect(outputFormat).toContain('"replies"')
     expect(outputFormat).toContain('"parent_id"')
     expect(outputFormat).toContain('Each item in conversations is one separate top-level Reddit conversation')
-    expect(outputFormat).toContain('At least 30% of all comments must be roots')
-    expect(outputFormat).toContain('at least 35% must be replies')
+    expect(outputFormat).toContain('At least 35% of all comments must be replies')
+    expect(outputFormat).toContain('create at least 3 separate top-level conversations')
     expect(outputFormat).not.toContain('"subreddit"')
     expect(outputFormat).not.toContain('"flair"')
     expect(outputFormat).not.toContain('"timestamp"')
@@ -593,10 +593,9 @@ describe('Threadverse continuity', () => {
     expect(feed.comments[0].replies[0].username).toBe('reply-a')
   })
 
-  test('rejects a generated discussion that turns almost everything into replies', () => {
-    const conversations = Array.from({ length: 3 }, (_, conversationIndex) => {
+  test('accepts a large discussion with seven substantial top-level conversations', () => {
+    const conversations = Array.from({ length: 7 }, (_, conversationIndex) => {
       const rootId = `c${conversationIndex + 1}`
-      const replyCount = conversationIndex < 2 ? 3 : 2
       return {
         root: {
           id: rootId,
@@ -604,7 +603,37 @@ describe('Threadverse continuity', () => {
           body: `Root ${conversationIndex + 1}`,
           score: 20,
         },
-        replies: Array.from({ length: replyCount }, (_, replyIndex) => ({
+        replies: Array.from({ length: 5 }, (_, replyIndex) => ({
+          id: `${rootId}-r${replyIndex + 1}`,
+          parent_id: rootId,
+          username: `reply-${conversationIndex + 1}-${replyIndex + 1}`,
+          body: `Reply ${replyIndex + 1}`,
+          score: 10,
+        })),
+      }
+    })
+
+    const feed = parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Large discussion',
+      post: { username: 'OP', body: 'Opening', score: 100 },
+      conversations,
+    }))
+
+    expect(feed.comments).toHaveLength(7)
+    expect(feed.comments.reduce((total, comment) => total + comment.replies.length, 0)).toBe(35)
+  })
+
+  test('rejects a long discussion with fewer than three top-level conversations', () => {
+    const conversations = Array.from({ length: 2 }, (_, conversationIndex) => {
+      const rootId = `c${conversationIndex + 1}`
+      return {
+        root: {
+          id: rootId,
+          username: `root-${conversationIndex + 1}`,
+          body: `Root ${conversationIndex + 1}`,
+          score: 20,
+        },
+        replies: Array.from({ length: 4 }, (_, replyIndex) => ({
           id: `${rootId}-r${replyIndex + 1}`,
           parent_id: rootId,
           username: `reply-${conversationIndex + 1}-${replyIndex + 1}`,
@@ -615,10 +644,10 @@ describe('Threadverse continuity', () => {
     })
 
     expect(() => parseGeneratedThreadverseFeed(JSON.stringify({
-      title: 'Too many replies',
+      title: 'Too few roots',
       post: { username: 'OP', body: 'Opening', score: 100 },
       conversations,
-    }))).toThrow('reply-heavy discussion')
+    }))).toThrow('at least 3 are required')
   })
 
   test('parses fenced JSON and common author/content aliases', () => {

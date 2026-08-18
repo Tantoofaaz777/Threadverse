@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1
+
+- Accept large, naturally deep discussions as long as they contain at least three separate top-level conversations.
+- Remove the overly strict requirement that 30% of every generated discussion be top-level comments.
+
 ## 1.7.0
 
 - Replace positional comment rows for new generations with explicit conversation groups that separate every top-level comment from its local replies.

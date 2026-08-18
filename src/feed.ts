@@ -84,10 +84,10 @@ function requireDiscussionNesting(comments: ThreadverseComment[]): void {
     )
   }
 
-  const requiredRoots = Math.max(1, Math.ceil(stats.total * 0.3))
+  const requiredRoots = stats.total >= 6 ? 3 : 1
   if (comments.length < requiredRoots) {
     throw new Error(
-      `The model returned a reply-heavy discussion: ${comments.length} of ${stats.total} comments are roots, but at least ${requiredRoots} are required.`,
+      `The model returned only ${comments.length} top-level conversation${comments.length === 1 ? '' : 's'}; at least ${requiredRoots} are required.`,
     )
   }
 }

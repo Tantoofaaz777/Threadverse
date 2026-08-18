@@ -80,7 +80,7 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
     }
   ]
 }
-The example demonstrates structure only; scale the number of conversations and replies to the requested discussion size. Each item in conversations is one separate top-level Reddit conversation and contains exactly one root. Every reply must use parent_id equal to that conversation's root id or to the id of an earlier reply inside the SAME conversation. Never move a root into replies and never reference another conversation. At least 30% of all comments must be roots and at least 35% must be replies. With 6 or more comments, at least 3 different conversations must receive replies. Do not put the entire discussion beneath one root.
+The example demonstrates structure only; scale the number of conversations and replies to the requested discussion size. Each item in conversations is one separate top-level Reddit conversation and contains exactly one root. Every reply must use parent_id equal to that conversation's root id or to the id of an earlier reply inside the SAME conversation. Never move a root into replies and never reference another conversation. At least 35% of all comments must be replies. With 6 or more comments, create at least 3 separate top-level conversations and give each of at least 3 conversations one or more replies. Do not put the entire discussion beneath one root.
 Return ONLY the JSON—no explanations, no notes, no commentary.`,
   ].join('\n\n')
 }
