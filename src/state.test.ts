@@ -511,7 +511,7 @@ describe('Threadverse continuity', () => {
     expect(prompt).not.toContain('>>> FANDOM NOTES <<<')
   })
 
-  test('asks the model for only the compact feed fields', () => {
+  test('asks the model for separate verbose conversation groups', () => {
     const prompt = buildThreadversePrompt({
       previousRanges: [],
       recentRange: { label: 'ROUND 1', content: 'Story' },
@@ -524,14 +524,101 @@ describe('Threadverse continuity', () => {
     expect(outputFormat).toContain('"username"')
     expect(outputFormat).toContain('"body"')
     expect(outputFormat).toContain('"score"')
-    expect(outputFormat).toContain('[parent, username, body, score]')
-    expect(outputFormat).toContain('1-based row number of the exact earlier comment being answered')
-    expect(outputFormat).toContain('At least 35% of all comment rows must be replies')
-    expect(outputFormat).not.toContain('"replies"')
+    expect(outputFormat).toContain('"conversations"')
+    expect(outputFormat).toContain('"root"')
+    expect(outputFormat).toContain('"replies"')
+    expect(outputFormat).toContain('"parent_id"')
+    expect(outputFormat).toContain('Each item in conversations is one separate top-level Reddit conversation')
+    expect(outputFormat).toContain('At least 30% of all comments must be roots')
+    expect(outputFormat).toContain('at least 35% must be replies')
     expect(outputFormat).not.toContain('"subreddit"')
     expect(outputFormat).not.toContain('"flair"')
     expect(outputFormat).not.toContain('"timestamp"')
-    expect(outputFormat).not.toContain('"id"')
+  })
+
+  test('reconstructs verbose conversation groups into separate reply trees', () => {
+    const feed = parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Grouped discussion',
+      post: { username: 'OP', body: 'Opening', score: 100 },
+      conversations: [
+        {
+          root: { id: 'c1', username: 'root-a', body: 'Root A', score: 50 },
+          replies: [
+            { id: 'c1-r1', parent_id: 'c1', username: 'reply-a', body: 'Reply A', score: 30 },
+            { id: 'c1-r2', parent_id: 'c1-r1', username: 'nested-a', body: 'Nested A', score: 20 },
+          ],
+        },
+        {
+          root: { id: 'c2', username: 'root-b', body: 'Root B', score: 45 },
+          replies: [
+            { id: 'c2-r1', parent_id: 'c2', username: 'reply-b', body: 'Reply B', score: 25 },
+          ],
+        },
+        {
+          root: { id: 'c3', username: 'root-c', body: 'Root C', score: 40 },
+          replies: [
+            { id: 'c3-r1', parent_id: 'c3', username: 'reply-c', body: 'Reply C', score: 15 },
+          ],
+        },
+      ],
+    }))
+
+    expect(feed.comments.map((comment) => comment.username)).toEqual(['root-a', 'root-b', 'root-c'])
+    expect(feed.comments[0].replies[0].username).toBe('reply-a')
+    expect(feed.comments[0].replies[0].replies[0].username).toBe('nested-a')
+    expect(feed.comments[1].replies[0].username).toBe('reply-b')
+    expect(feed.comments[2].replies[0].username).toBe('reply-c')
+  })
+
+  test('repairs an invalid conversation parent back to its local root', () => {
+    const feed = parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Repaired discussion',
+      post: { username: 'OP', body: 'Opening', score: 100 },
+      conversations: [
+        {
+          root: { id: 'c1', username: 'root-a', body: 'Root A', score: 50 },
+          replies: [{ id: 'c1-r1', parent_id: 'not-in-this-conversation', username: 'reply-a', body: 'Reply A', score: 30 }],
+        },
+        {
+          root: { id: 'c2', username: 'root-b', body: 'Root B', score: 45 },
+          replies: [{ id: 'c2-r1', parent_id: 'c2', username: 'reply-b', body: 'Reply B', score: 25 }],
+        },
+        {
+          root: { id: 'c3', username: 'root-c', body: 'Root C', score: 40 },
+          replies: [{ id: 'c3-r1', parent_id: 'c3', username: 'reply-c', body: 'Reply C', score: 15 }],
+        },
+      ],
+    }))
+
+    expect(feed.comments[0].replies[0].username).toBe('reply-a')
+  })
+
+  test('rejects a generated discussion that turns almost everything into replies', () => {
+    const conversations = Array.from({ length: 3 }, (_, conversationIndex) => {
+      const rootId = `c${conversationIndex + 1}`
+      const replyCount = conversationIndex < 2 ? 3 : 2
+      return {
+        root: {
+          id: rootId,
+          username: `root-${conversationIndex + 1}`,
+          body: `Root ${conversationIndex + 1}`,
+          score: 20,
+        },
+        replies: Array.from({ length: replyCount }, (_, replyIndex) => ({
+          id: `${rootId}-r${replyIndex + 1}`,
+          parent_id: rootId,
+          username: `reply-${conversationIndex + 1}-${replyIndex + 1}`,
+          body: `Reply ${replyIndex + 1}`,
+          score: 10,
+        })),
+      }
+    })
+
+    expect(() => parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Too many replies',
+      post: { username: 'OP', body: 'Opening', score: 100 },
+      conversations,
+    }))).toThrow('reply-heavy discussion')
   })
 
   test('parses fenced JSON and common author/content aliases', () => {

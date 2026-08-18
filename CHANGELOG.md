@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0
+
+- Replace positional comment rows for new generations with explicit conversation groups that separate every top-level comment from its local replies.
+- Resolve reply parents only inside their conversation and safely attach malformed parent references to that conversation's root.
+- Reject generated discussions with fewer than 30% top-level comments while preserving the existing reply and conversation distribution requirements.
+- Keep previously generated positional and nested feed formats fully compatible.
+
 ## 1.6.5
 
 - Update `lumiverse-spindle-types` from 0.6.8 to 0.6.16 to match Lumiverse 1.1.6.

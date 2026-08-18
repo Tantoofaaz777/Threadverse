@@ -58,17 +58,29 @@ export function buildThreadversePrompt(input: ThreadversePromptInput): string {
 {
   "title": "thread title",
   "post": { "username": "name", "body": "text", "score": 0 },
-  "comments": [
-    [0, "root_a", "independent top-level comment", 120],
-    [1, "reply_a", "reply to row 1", 45],
-    [2, "root_a", "reply to row 2", 31],
-    [0, "root_b", "another independent top-level comment", 90],
-    [4, "reply_b", "reply to row 4", 28],
-    [0, "root_c", "another independent top-level comment", 70],
-    [6, "reply_c", "reply to row 6", 19]
+  "conversations": [
+    {
+      "root": { "id": "c1", "username": "root_a", "body": "independent top-level comment", "score": 120 },
+      "replies": [
+        { "id": "c1-r1", "parent_id": "c1", "username": "reply_a", "body": "direct reply to root_a", "score": 45 },
+        { "id": "c1-r2", "parent_id": "c1-r1", "username": "root_a", "body": "nested reply to reply_a", "score": 31 }
+      ]
+    },
+    {
+      "root": { "id": "c2", "username": "root_b", "body": "another independent top-level comment", "score": 90 },
+      "replies": [
+        { "id": "c2-r1", "parent_id": "c2", "username": "reply_b", "body": "direct reply to root_b", "score": 28 }
+      ]
+    },
+    {
+      "root": { "id": "c3", "username": "root_c", "body": "another independent top-level comment", "score": 70 },
+      "replies": [
+        { "id": "c3-r1", "parent_id": "c3", "username": "reply_c", "body": "direct reply to root_c", "score": 19 }
+      ]
+    }
   ]
 }
-Each comment row is exactly [parent, username, body, score]. Rows are numbered starting at 1. parent is 0 ONLY for a genuinely independent top-level comment; otherwise it is the 1-based row number of the exact earlier comment being answered. At least 35% of all comment rows must be replies. With 6 or more comments, at least 3 different top-level conversations must receive replies. Threadverse rejects flatter results.
+The example demonstrates structure only; scale the number of conversations and replies to the requested discussion size. Each item in conversations is one separate top-level Reddit conversation and contains exactly one root. Every reply must use parent_id equal to that conversation's root id or to the id of an earlier reply inside the SAME conversation. Never move a root into replies and never reference another conversation. At least 30% of all comments must be roots and at least 35% must be replies. With 6 or more comments, at least 3 different conversations must receive replies. Do not put the entire discussion beneath one root.
 Return ONLY the JSON—no explanations, no notes, no commentary.`,
   ].join('\n\n')
 }

@@ -31,6 +31,12 @@ function positionalScore(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0
 }
 
+function identifierFrom(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return null
+}
+
 interface NestingStats {
   total: number
   replies: number
@@ -77,6 +83,76 @@ function requireDiscussionNesting(comments: ThreadverseComment[]): void {
       `The model replied within only ${stats.conversationsWithReplies} top-level conversation${stats.conversationsWithReplies === 1 ? '' : 's'}; at least ${requiredConversations} are required.`,
     )
   }
+
+  const requiredRoots = Math.max(1, Math.ceil(stats.total * 0.3))
+  if (comments.length < requiredRoots) {
+    throw new Error(
+      `The model returned a reply-heavy discussion: ${comments.length} of ${stats.total} comments are roots, but at least ${requiredRoots} are required.`,
+    )
+  }
+}
+
+function parseConversations(rawConversations: unknown[]): ThreadverseComment[] {
+  if (rawConversations.length > 500) throw new Error('The generated comment tree is too large.')
+  let totalComments = 0
+
+  return rawConversations.map((value, conversationIndex) => {
+    const conversation = asObject(value, `Conversation ${conversationIndex + 1}`)
+    const rootObject = asObject(conversation.root, `Conversation ${conversationIndex + 1} root`)
+    const rawReplies = conversation.replies ?? []
+    if (!Array.isArray(rawReplies)) {
+      throw new Error(`Conversation ${conversationIndex + 1} replies must be a JSON array.`)
+    }
+    totalComments += 1 + rawReplies.length
+    if (totalComments > 500) throw new Error('The generated comment tree is too large.')
+
+    const rootId = identifierFrom(rootObject.id) ?? `conversation-${conversationIndex + 1}`
+    const root: ThreadverseComment = {
+      username: stringFrom(rootObject, ['username', 'author', 'user'], `Conversation ${conversationIndex + 1} root username`),
+      body: stringFrom(rootObject, ['body', 'content', 'text'], `Conversation ${conversationIndex + 1} root body`),
+      score: scoreFrom(rootObject),
+      replies: [],
+    }
+
+    const replyRows = rawReplies.map((replyValue, replyIndex) => {
+      const reply = asObject(replyValue, `Conversation ${conversationIndex + 1} reply ${replyIndex + 1}`)
+      const comment: ThreadverseComment = {
+        username: stringFrom(reply, ['username', 'author', 'user'], `Conversation ${conversationIndex + 1} reply ${replyIndex + 1} username`),
+        body: stringFrom(reply, ['body', 'content', 'text'], `Conversation ${conversationIndex + 1} reply ${replyIndex + 1} body`),
+        score: scoreFrom(reply),
+        replies: [],
+      }
+      return {
+        id: identifierFrom(reply.id) ?? `conversation-${conversationIndex + 1}-reply-${replyIndex + 1}`,
+        parentId: identifierFrom(reply.parent_id ?? reply.parentId ?? reply.reply_to),
+        comment,
+      }
+    })
+
+    const replyIndexes = new Map<string, number>()
+    replyRows.forEach((reply, index) => {
+      if (reply.id !== rootId && !replyIndexes.has(reply.id)) replyIndexes.set(reply.id, index)
+    })
+    replyRows.forEach((reply, index) => {
+      const parentIndex = reply.parentId ? replyIndexes.get(reply.parentId) : undefined
+      // The conversation itself already identifies the safe root. A missing,
+      // cross-conversation, self, or forward parent can therefore be repaired
+      // locally without guessing which top-level discussion it belongs to.
+      if (
+        !reply.parentId
+        || reply.parentId === rootId
+        || reply.parentId.toLowerCase() === 'root'
+        || parentIndex === undefined
+        || parentIndex >= index
+      ) {
+        root.replies.push(reply.comment)
+      } else {
+        replyRows[parentIndex].comment.replies.push(reply.comment)
+      }
+    })
+
+    return root
+  })
 }
 
 function parsePositionalComments(rawComments: unknown[]): ThreadverseComment[] {
@@ -193,8 +269,6 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
   }
   const root = asObject(parsed, 'Feed')
   const post = asObject(root.post ?? root.openingPost ?? root.opening_post, 'Post')
-  const rawComments = root.comments
-  if (!Array.isArray(rawComments)) throw new Error('Feed comments must be a JSON array.')
   let totalComments = 0
 
   const parseComment = (value: unknown, depth: number): ThreadverseComment => {
@@ -211,9 +285,18 @@ export function parseThreadverseFeed(text: string): ThreadverseFeed {
     }
   }
 
-  const comments = rawComments.some((comment) => Array.isArray(comment))
-    ? parsePositionalComments(rawComments)
-    : rawComments.map((comment) => parseComment(comment, 0))
+  let comments: ThreadverseComment[]
+  if (Array.isArray(root.conversations)) {
+    comments = parseConversations(root.conversations)
+  } else {
+    const rawComments = root.comments
+    if (!Array.isArray(rawComments)) {
+      throw new Error('Feed conversations or comments must be a JSON array.')
+    }
+    comments = rawComments.some((comment) => Array.isArray(comment))
+      ? parsePositionalComments(rawComments)
+      : rawComments.map((comment) => parseComment(comment, 0))
+  }
 
   return {
     title: stringFrom(root, ['title'], 'Thread title'),
