@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.4
+
+- Reconstruct reply trees even when the model emits a child row before its parent row.
+- Interpret a comment's self-reference as the model's mistaken top-level marker instead of trapping that range in repeat failures.
+- Continue discarding truly invalid generations, including nonexistent parents and circular reply graphs, without saving a partial round.
+- Include the received parent value in invalid-index errors to make any new malformed format diagnosable.
+
 ## 1.6.3
 
 - Use natural 1-based comment row numbers with `0` as the top-level marker in newly generated feeds.

@@ -81,9 +81,6 @@ function requireDiscussionNesting(comments: ThreadverseComment[]): void {
 
 function parsePositionalComments(rawComments: unknown[]): ThreadverseComment[] {
   if (rawComments.length > 500) throw new Error('The generated comment tree is too large.')
-  const roots: ThreadverseComment[] = []
-  const comments: ThreadverseComment[] = []
-  const depths: number[] = []
 
   const rows = rawComments.map((value, index) => {
     if (!Array.isArray(value) || value.length !== 4) {
@@ -112,26 +109,51 @@ function parsePositionalComments(rawComments: unknown[]): ThreadverseComment[] {
       ? 'one-based-minus-root'
       : 'zero-based-minus-root'
 
-  rows.forEach(({ parent: encodedParent, username, body, score }, index) => {
+  const normalizedParents = rows.map(({ parent: encodedParent }, index) => {
     const parent = parentMode === 'one-based-zero-root'
       ? encodedParent === 0 ? -1 : encodedParent - 1
       : parentMode === 'one-based-minus-root'
         ? encodedParent === -1 ? -1 : encodedParent - 1
         : encodedParent
-    if (parent !== -1 && (parent < 0 || parent >= index)) {
-      throw new Error(`Comment row ${index + 1} has an invalid parent index.`)
-    }
 
-    const depth = parent === -1 ? 0 : depths[parent] + 1
-    if (depth > 12) throw new Error('The generated comment tree is too large.')
-    const comment: ThreadverseComment = {
-      username: positionalString(username, `Comment row ${index + 1} username`),
-      body: positionalString(body, `Comment row ${index + 1} body`),
-      score: positionalScore(score),
-      replies: [],
+    // Some models use a row's own number as a top-level marker even after being
+    // told to use zero. That reference cannot describe a reply, so treating it
+    // as a root preserves the only unambiguous interpretation.
+    if (parent === index) return -1
+    if (parent !== -1 && (parent < 0 || parent >= rows.length)) {
+      throw new Error(
+        `Comment row ${index + 1} has an invalid parent index (${encodedParent}).`,
+      )
     }
-    comments.push(comment)
-    depths.push(depth)
+    return parent
+  })
+
+  const depths = new Array<number>(rows.length).fill(-1)
+  const visiting = new Set<number>()
+  const resolveDepth = (index: number): number => {
+    if (depths[index] >= 0) return depths[index]
+    if (visiting.has(index)) {
+      throw new Error(`The generated comment tree contains a parent cycle at row ${index + 1}.`)
+    }
+    visiting.add(index)
+    const parent = normalizedParents[index]
+    const depth = parent === -1 ? 0 : resolveDepth(parent) + 1
+    if (depth > 12) throw new Error('The generated comment tree is too large.')
+    visiting.delete(index)
+    depths[index] = depth
+    return depth
+  }
+  rows.forEach((_, index) => resolveDepth(index))
+
+  const comments: ThreadverseComment[] = rows.map(({ username, body, score }, index) => ({
+    username: positionalString(username, `Comment row ${index + 1} username`),
+    body: positionalString(body, `Comment row ${index + 1} body`),
+    score: positionalScore(score),
+    replies: [],
+  }))
+  const roots: ThreadverseComment[] = []
+  comments.forEach((comment, index) => {
+    const parent = normalizedParents[index]
     if (parent === -1) roots.push(comment)
     else comments[parent].replies.push(comment)
   })

@@ -646,15 +646,56 @@ describe('Threadverse continuity', () => {
     }))).toThrow('at least 3 are required')
   })
 
-  test('rejects positional comments that point to a future parent', () => {
+  test('reconstructs positional comments that appear before their parent', () => {
+    const feed = parseThreadverseFeed(JSON.stringify({
+      title: 'Out-of-order parent',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [0, 'root-a', 'Root A', 4],
+        [4, 'reply-b', 'Reply before root B', 3],
+        [0, 'root-c', 'Root C', 2],
+        [0, 'root-b', 'Root B', 1],
+      ],
+    }))
+
+    expect(feed.comments.map((comment) => comment.username)).toEqual(['root-a', 'root-c', 'root-b'])
+    expect(feed.comments[2].replies[0].username).toBe('reply-b')
+  })
+
+  test('repairs a self parent marker as a top-level comment', () => {
+    const feed = parseThreadverseFeed(JSON.stringify({
+      title: 'Self root marker',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [0, 'root-a', 'Root A', 3],
+        [2, 'root-b', 'Root B', 2],
+        [2, 'reply-b', 'Reply to B', 1],
+      ],
+    }))
+
+    expect(feed.comments.map((comment) => comment.username)).toEqual(['root-a', 'root-b'])
+    expect(feed.comments[1].replies[0].username).toBe('reply-b')
+  })
+
+  test('rejects nonexistent parent rows and parent cycles', () => {
     expect(() => parseThreadverseFeed(JSON.stringify({
-      title: 'Invalid parent',
+      title: 'Missing parent',
       post: { username: 'OP', body: 'Opening', score: 10 },
       comments: [
         [0, 'root', 'Root', 2],
-        [2, 'reply', 'Impossible reply', 1],
+        [99, 'reply', 'Impossible reply', 1],
       ],
-    }))).toThrow('invalid parent index')
+    }))).toThrow('invalid parent index (99)')
+
+    expect(() => parseThreadverseFeed(JSON.stringify({
+      title: 'Parent cycle',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [0, 'root', 'Root', 3],
+        [3, 'cycle-a', 'Cycle A', 2],
+        [2, 'cycle-b', 'Cycle B', 1],
+      ],
+    }))).toThrow('parent cycle')
   })
 
   test('serializes compact fandom continuity text with scores in reading order', () => {
