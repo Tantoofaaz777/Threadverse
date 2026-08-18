@@ -525,7 +525,7 @@ describe('Threadverse continuity', () => {
     expect(outputFormat).toContain('"body"')
     expect(outputFormat).toContain('"score"')
     expect(outputFormat).toContain('[parent, username, body, score]')
-    expect(outputFormat).toContain('zero-based index of the exact earlier comment being answered')
+    expect(outputFormat).toContain('1-based row number of the exact earlier comment being answered')
     expect(outputFormat).toContain('At least 35% of all comment rows must be replies')
     expect(outputFormat).not.toContain('"replies"')
     expect(outputFormat).not.toContain('"subreddit"')
@@ -551,13 +551,13 @@ describe('Threadverse continuity', () => {
       title: 'Episode discussion',
       post: { username: 'OP', body: 'Opening', score: 100 },
       comments: [
-        [-1, 'root-a', 'Root A', 50],
-        [0, 'reply-a', 'Reply to A', 30],
-        [1, 'reply-a-2', 'Reply to the reply', 20],
-        [-1, 'root-b', 'Root B', 45],
-        [3, 'reply-b', 'Reply to B', 25],
-        [-1, 'root-c', 'Root C', 40],
-        [5, 'reply-c', 'Reply to C', 15],
+        [0, 'root-a', 'Root A', 50],
+        [1, 'reply-a', 'Reply to A', 30],
+        [2, 'reply-a-2', 'Reply to the reply', 20],
+        [0, 'root-b', 'Root B', 45],
+        [4, 'reply-b', 'Reply to B', 25],
+        [0, 'root-c', 'Root C', 40],
+        ['6', 'reply-c', 'Reply to C', 15],
       ],
     }))
 
@@ -566,6 +566,43 @@ describe('Threadverse continuity', () => {
     expect(feed.comments[0].replies[0].replies[0].username).toBe('reply-a-2')
     expect(feed.comments[1].replies[0].username).toBe('reply-b')
     expect(feed.comments[2].replies[0].username).toBe('reply-c')
+  })
+
+  test('keeps old zero-based parent rows compatible', () => {
+    const feed = parseThreadverseFeed(JSON.stringify({
+      title: 'Legacy indexes',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [-1, 'root', 'Root', 3],
+        [0, 'reply', 'Reply', 2],
+        [1, 'nested', 'Nested reply', 1],
+      ],
+    }))
+
+    expect(feed.comments[0].replies[0].username).toBe('reply')
+    expect(feed.comments[0].replies[0].replies[0].username).toBe('nested')
+  })
+
+  test('repairs the mixed one-based format produced with the old root marker', () => {
+    const feed = parseGeneratedThreadverseFeed(JSON.stringify({
+      title: 'Mixed indexes',
+      post: { username: 'OP', body: 'Opening', score: 10 },
+      comments: [
+        [-1, 'root-a', 'Root A', 6],
+        [1, 'reply-a', 'Reply A', 5],
+        [-1, 'root-b', 'Root B', 4],
+        [3, 'reply-b', 'Reply B', 3],
+        [-1, 'root-c', 'Root C', 2],
+        [5, 'reply-c', 'Reply C', 1],
+      ],
+    }))
+
+    expect(feed.comments.map((comment) => comment.username)).toEqual(['root-a', 'root-b', 'root-c'])
+    expect(feed.comments.map((comment) => comment.replies[0]?.username)).toEqual([
+      'reply-a',
+      'reply-b',
+      'reply-c',
+    ])
   })
 
   test('rejects a generated discussion that is too flat', () => {
@@ -613,7 +650,10 @@ describe('Threadverse continuity', () => {
     expect(() => parseThreadverseFeed(JSON.stringify({
       title: 'Invalid parent',
       post: { username: 'OP', body: 'Opening', score: 10 },
-      comments: [[1, 'reply', 'Impossible reply', 1]],
+      comments: [
+        [0, 'root', 'Root', 2],
+        [2, 'reply', 'Impossible reply', 1],
+      ],
     }))).toThrow('invalid parent index')
   })
 

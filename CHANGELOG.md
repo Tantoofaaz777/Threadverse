@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.3
+
+- Use natural 1-based comment row numbers with `0` as the top-level marker in newly generated feeds.
+- Continue accepting the original zero-based format and repair the common hybrid output that used `-1` roots with 1-based parents.
+- Accept integer parent indexes encoded as JSON strings while continuing to reject future, circular, and invalid references.
+- Report invalid references using human-readable 1-based row numbers.
+
 ## 1.6.2
 
 - Load prompt regexes through the same Spindle-filtered pipeline used by SummaryPlus, without rechecking the host's multi-target representation as a scalar.

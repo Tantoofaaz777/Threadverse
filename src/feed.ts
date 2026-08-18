@@ -85,24 +85,48 @@ function parsePositionalComments(rawComments: unknown[]): ThreadverseComment[] {
   const comments: ThreadverseComment[] = []
   const depths: number[] = []
 
-  rawComments.forEach((value, index) => {
+  const rows = rawComments.map((value, index) => {
     if (!Array.isArray(value) || value.length !== 4) {
-      throw new Error(`Comment ${index} must be [parent, username, body, score].`)
+      throw new Error(`Comment row ${index + 1} must be [parent, username, body, score].`)
     }
-    const [parent, username, body, score] = value
-    if (
-      typeof parent !== 'number'
-      || !Number.isInteger(parent)
-      || (parent !== -1 && (parent < 0 || parent >= index))
-    ) {
-      throw new Error(`Comment ${index} has an invalid parent index.`)
+    const [rawParent, username, body, score] = value
+    const parent = typeof rawParent === 'string' && /^-?\d+$/.test(rawParent.trim())
+      ? Number(rawParent)
+      : rawParent
+    if (typeof parent !== 'number' || !Number.isInteger(parent)) {
+      throw new Error(`Comment row ${index + 1} has an invalid parent index.`)
+    }
+    return { parent, username, body, score }
+  })
+
+  const parents = rows.map((row) => row.parent)
+  const zeroBasedMinusRootIsValid = parents.every((parent, index) => (
+    parent === -1 || (parent >= 0 && parent < index)
+  ))
+  const oneBasedMinusRootIsValid = parents.every((parent, index) => (
+    parent === -1 || (parent >= 1 && parent <= index)
+  ))
+  const parentMode = parents[0] === 0
+    ? 'one-based-zero-root'
+    : parents[0] === -1 && oneBasedMinusRootIsValid && !zeroBasedMinusRootIsValid
+      ? 'one-based-minus-root'
+      : 'zero-based-minus-root'
+
+  rows.forEach(({ parent: encodedParent, username, body, score }, index) => {
+    const parent = parentMode === 'one-based-zero-root'
+      ? encodedParent === 0 ? -1 : encodedParent - 1
+      : parentMode === 'one-based-minus-root'
+        ? encodedParent === -1 ? -1 : encodedParent - 1
+        : encodedParent
+    if (parent !== -1 && (parent < 0 || parent >= index)) {
+      throw new Error(`Comment row ${index + 1} has an invalid parent index.`)
     }
 
     const depth = parent === -1 ? 0 : depths[parent] + 1
     if (depth > 12) throw new Error('The generated comment tree is too large.')
     const comment: ThreadverseComment = {
-      username: positionalString(username, `Comment ${index} username`),
-      body: positionalString(body, `Comment ${index} body`),
+      username: positionalString(username, `Comment row ${index + 1} username`),
+      body: positionalString(body, `Comment row ${index + 1} body`),
       score: positionalScore(score),
       replies: [],
     }
