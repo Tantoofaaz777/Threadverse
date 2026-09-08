@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.2
+
+- Update `lumiverse-spindle-types` from 0.6.16 to 0.6.29 to match the current Lumiverse staging API.
+
 ## 1.7.1
 
 - Accept large, naturally deep discussions as long as they contain at least three separate top-level conversations.
