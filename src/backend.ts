@@ -17,6 +17,7 @@ import { parseGeneratedThreadverseFeed, serializeFeedForContinuity } from './fee
 import {
   applyOutgoingRegexToMessages,
   compareRegexScripts,
+  isSupportedOutgoingRegex,
   regexAppliesToChat,
 } from './outgoing-regex'
 import {
@@ -272,7 +273,7 @@ async function getOutgoingRegexScripts(
   } while (offset < total)
 
   return scripts
-    .filter((script) => regexAppliesToChat(script, chat))
+    .filter((script) => regexAppliesToChat(script, chat) && isSupportedOutgoingRegex(script))
     .sort(compareRegexScripts)
 }
 
@@ -438,15 +439,15 @@ function generationContent(result: unknown): string {
   return content
 }
 
-function promptForRound(
+async function promptForRound(
   store: ThreadverseStore,
   chatId: string,
   recent: ChatMessageSummary[],
   cutoff: number,
   installmentLabel: string,
   fandomNotesOverride?: string,
-  formatStoryMessages: (messages: ChatMessageSummary[]) => string = formatMessages,
-): string {
+  formatStoryMessages: (messages: ChatMessageSummary[]) => Promise<string> = async (messages) => formatMessages(messages),
+): Promise<string> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
   const previous = limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
@@ -458,12 +459,17 @@ function promptForRound(
     ? fandomCandidates.slice(-limits.fandomThreadLimit) : []
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
-  return buildThreadversePrompt({
-    previousRanges: groupConsecutiveStoryRanges(previous.map((round) => ({
+  const previousRanges: Array<{ label: string; content: string }> = []
+  for (const round of previous) {
+    previousRanges.push({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
-      content: formatStoryMessages(round.messages),
-    }))),
-    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: formatStoryMessages(recent) },
+      content: await formatStoryMessages(round.messages),
+    })
+  }
+  const recentContent = await formatStoryMessages(recent)
+  return buildThreadversePrompt({
+    previousRanges: groupConsecutiveStoryRanges(previousRanges),
+    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
     fandomContinuity: fandom.map(({ round, feed }) => ({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
       content: serializeFeedForContinuity(feed),
@@ -492,7 +498,7 @@ async function runGeneration(
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
-  let formatStoryMessages = formatMessages
+  let formatStoryMessages = async (messages: ChatMessageSummary[]) => formatMessages(messages)
   if (store.settings.outgoingRegexScriptIds.length > 0) {
     if (!spindle.permissions.has('regex_scripts')) {
       throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
@@ -511,10 +517,25 @@ async function runGeneration(
         recent.reduce((maximum, message) => Math.max(maximum, message.index), 0),
       )
       const reportedWarnings = new Set<string>()
-      formatStoryMessages = (messages) => formatMessages(applyOutgoingRegexToMessages(
+      const resolveRegexMacros = async (template: string): Promise<string> => {
+        const { text, diagnostics } = await spindle.macros.resolve(template, {
+          chatId,
+          userId,
+          commit: true,
+        })
+        for (const diagnostic of diagnostics) {
+          const warning = `Regex macro resolution: ${diagnostic.message}`
+          if (reportedWarnings.has(warning)) continue
+          reportedWarnings.add(warning)
+          spindle.log.warn(`[Threadverse] ${warning}`)
+        }
+        return text
+      }
+      formatStoryMessages = async (messages) => formatMessages(await applyOutgoingRegexToMessages(
         messages,
         selectedScripts,
         maxMessageIndex,
+        resolveRegexMacros,
         (warning) => {
           if (reportedWarnings.has(warning)) return
           reportedWarnings.add(warning)
@@ -523,7 +544,7 @@ async function runGeneration(
       ))
     }
   }
-  const unresolvedPrompt = promptForRound(
+  const unresolvedPrompt = await promptForRound(
     store,
     chatId,
     recent,
