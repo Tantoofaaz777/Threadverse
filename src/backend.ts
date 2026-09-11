@@ -46,6 +46,7 @@ import {
   inheritContinuityForFork,
   type ForkMessageReference,
 } from './fork-inheritance'
+import { orderSelectedMessageIds } from './range-selection'
 import type {
   ChatDTO,
   ChatForkedPayloadDTO,
@@ -638,23 +639,37 @@ function createFeedVersion(feed: ThreadverseFeed): FeedVersion {
   return { id: crypto.randomUUID(), createdAt: new Date().toISOString(), feed }
 }
 
-async function selectMessages(chatId: string, startId: string, endId: string, userId: string) {
+async function selectMessages(chatId: string, requestedIds: string[], userId: string) {
   if (!hasChatPermissions()) throw new Error('Grant the Chats and Chat Mutation permissions before generating.')
   const chat = await spindle.chats.getActive(userId)
-  if (!chat || chat.id !== chatId) throw new Error('The active chat changed. Refresh the message list and select the range again.')
+  if (!chat || chat.id !== chatId) throw new Error('The active chat changed. Refresh the message list and select the messages again.')
   const raw = await spindle.chat.getMessages(chat.id)
-  const start = raw.findIndex((message) => message.id === startId)
-  const end = raw.findIndex((message) => message.id === endId)
-  if (start < 0 || end < 0) throw new Error('One or both selected messages no longer exist in the active chat.')
-  const first = Math.min(start, end); const last = Math.max(start, end)
-  const messages: ChatMessageSummary[] = raw.slice(first, last + 1).map((message, offset) => ({ id: message.id, index: first + offset + 1, role: message.role, content: message.content }))
+  if (!Array.isArray(requestedIds) || requestedIds.length === 0) {
+    throw new Error('Select at least one message before generating.')
+  }
+  if (requestedIds.some((id) => typeof id !== 'string' || !id)) {
+    throw new Error('The message selection is invalid. Refresh the message list and try again.')
+  }
+  const orderedIds = orderSelectedMessageIds(raw.map((message) => message.id), requestedIds)
+  if (!orderedIds && new Set(requestedIds).size !== requestedIds.length) {
+    throw new Error('The message selection contains duplicates. Refresh the message list and try again.')
+  }
+  if (!orderedIds) {
+    throw new Error('One or more selected messages no longer exist in the active chat.')
+  }
+  const selectedIds = new Set(orderedIds)
+  const messages: ChatMessageSummary[] = raw.flatMap((message, index) => (
+    selectedIds.has(message.id)
+      ? [{ id: message.id, index: index + 1, role: message.role, content: message.content }]
+      : []
+  ))
   return { chat, messages }
 }
 
 async function generateThread(payload: Extract<import('./shared').FrontendToBackendMessage, { type: 'threadverse:generate_thread' }>, userId: string): Promise<void> {
   const active = beginGeneration(userId, payload.chatId, 'generate')
   try {
-    const selection = await selectMessages(payload.chatId, payload.startMessageId, payload.endMessageId, userId)
+    const selection = await selectMessages(payload.chatId, payload.messageIds, userId)
     throwIfAborted(active)
     const store = await loadStore(userId)
     throwIfAborted(active)
@@ -663,7 +678,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       ? payload.installmentLabel.trim()
       : ''
     const used = new Set(existing.flatMap((round) => round.messages.map((message) => message.id)))
-    if (selection.messages.some((message) => used.has(message.id))) throw new Error('This range overlaps messages that already belong to a continuity round.')
+    if (selection.messages.some((message) => used.has(message.id))) throw new Error('One or more selected messages already belong to a continuity round.')
     const feed = await runGeneration(
       store,
       selection.chat.id,
@@ -697,7 +712,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
         rounds: [],
       }
       const latestUsed = new Set(continuity.rounds.flatMap((item) => item.messages.map((message) => message.id)))
-      if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('This range was added to continuity while generation was running.')
+      if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('One or more selected messages were added to continuity while generation was running.')
       round.sequence = continuity.rounds.length + 1
       continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
       pruneInactiveFeedVersions(continuity.rounds, latest.settings)
@@ -706,7 +721,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
     await finishSuccessfulGeneration(
       selection.chat.id,
       round.id,
-      `Round ${round.sequence} generated from messages ${round.startIndex}-${round.endIndex}.`,
+      `Round ${round.sequence} generated from ${round.messageCount} selected message${round.messageCount === 1 ? '' : 's'}.`,
       userId,
     )
   } finally {

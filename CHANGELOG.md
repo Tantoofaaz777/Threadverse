@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0
+
+- Replace start/end range endpoints with independent message checkboxes.
+- Add Shift-click range selection on desktop and scroll-safe long-press range selection on touch devices.
+- Keep sparse selections in chronological chat order, skip messages already used by saved rounds, and preserve active selections across background chat refreshes.
+- Keep existing rounds and fork inheritance compatible while describing sparse rounds by their actual selected-message count.
+
 ## 1.7.2
 
 - Update `lumiverse-spindle-types` from 0.6.16 to 0.6.29 to match the current Lumiverse staging API.

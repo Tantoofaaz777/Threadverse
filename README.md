@@ -10,7 +10,7 @@ The extension currently includes:
 
 - a Lumiverse drawer tab;
 - the `Feed`, `Make`, and `Settings` navigation shell;
-- active-chat message loading and success-themed range selection;
+- active-chat message loading with success-themed individual checkboxes, Shift-click desktop ranges, and long-press mobile ranges;
 - optional free-form title, episode, or chapter labels stored with each selected round;
 - per-user, per-chat chronological round persistence;
 - automatic fork inheritance for complete pre-fork rounds, feed swipes, and Fandom Notes, including nested and previously created forks;

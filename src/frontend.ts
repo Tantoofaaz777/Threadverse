@@ -21,7 +21,7 @@ import {
   type ThreadverseSettingsPayload,
   type ThreadverseTab,
 } from './shared'
-import { toggleRangeEndpoint } from './range-selection'
+import { addMessageRange, toggleMessageSelection } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { serializeFeedAsPlainText } from './feed'
 import { resolveFeedSwipe } from './feed-swipe'
@@ -325,9 +325,9 @@ const STYLES = `
 
   .threadverse-message {
     display: grid;
-    grid-template-columns: 30px minmax(0, 1fr);
-    gap: 1px;
-    align-items: start;
+    grid-template-columns: 14px 27px minmax(0, 1fr);
+    gap: 4px;
+    align-items: center;
     width: 100%;
     border: 0;
     border-bottom: 1px solid var(--lumiverse-border);
@@ -337,12 +337,13 @@ const STYLES = `
     text-align: left;
     cursor: pointer;
     font: inherit;
+    touch-action: pan-y;
+    -webkit-touch-callout: none;
   }
 
   .threadverse-message:last-child { border-bottom: 0; }
   .threadverse-message:hover { background: var(--lumiverse-fill-subtle); }
   .threadverse-message.is-selected { background: var(--lumiverse-success-015, rgba(34, 197, 94, .15)); }
-  .threadverse-message.is-endpoint { box-shadow: inset 3px 0 0 var(--lumiverse-success, #22c55e); }
   .threadverse-message.is-used {
     cursor: not-allowed;
     opacity: .38;
@@ -350,13 +351,32 @@ const STYLES = `
 
   .threadverse-message.is-used:hover { background: transparent; }
 
-  .threadverse-message-marker {
+  .threadverse-message-checkbox {
+    position: relative;
     display: block;
-    margin-top: 3px;
-    color: var(--lumiverse-success, #22c55e);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .04em;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lcs-radius-xs, 3px);
+    background: var(--lumiverse-fill-subtle);
+    transition: border-color .12s ease, background .12s ease;
+  }
+
+  .threadverse-message.is-selected .threadverse-message-checkbox {
+    border-color: var(--lumiverse-success, #22c55e);
+    background: var(--lumiverse-success, #22c55e);
+  }
+
+  .threadverse-message.is-selected .threadverse-message-checkbox::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 3px;
+    height: 7px;
+    border: solid var(--lumiverse-bg-deep, #0a0812);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
   }
 
   .threadverse-message-index {
@@ -667,7 +687,7 @@ export function setup(ctx: SpindleFrontendContext) {
     <section class="threadverse-panel" data-panel="make">
       <div class="threadverse-card">
         <h2 class="threadverse-eyebrow">Select a scene</h2>
-        <p class="threadverse-copy">Choose the first and last messages of the range you want the fandom to discuss.</p>
+        <p class="threadverse-copy">Tap messages to select individually. Shift-click or hold another message to select a range.</p>
         <div class="threadverse-context">
           <div class="threadverse-context-header">
             <span class="threadverse-chat-name" data-chat-name>No active chat</span>
@@ -679,7 +699,7 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
           <div class="threadverse-context-row">
             <span class="threadverse-context-label">Recent context</span>
-            <span class="threadverse-context-value is-recent" data-recent-context>Select a range below</span>
+            <span class="threadverse-context-value is-recent" data-recent-context>Select messages below</span>
           </div>
           <label class="threadverse-installment-field" data-installment-field hidden>
             <span class="threadverse-context-label">Title / episode / chapter</span>
@@ -836,8 +856,14 @@ export function setup(ctx: SpindleFrontendContext) {
   let selectedFeedRoundId: string | null = null
   let feedRoundHandle: SpindleSelectHandle | null = null
   let deleteChoiceModal: SpindleModalHandle | null = null
-  let startIndex: number | null = null
-  let endIndex: number | null = null
+  let selectedMessageIds = new Set<string>()
+  let selectionAnchorId: string | null = null
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null
+  let longPressPointerId: number | null = null
+  let longPressMessageId: string | null = null
+  let longPressStartX = 0
+  let longPressStartY = 0
+  let suppressClickMessageId: string | null = null
   let installmentDraft = ''
   let installmentLabelHandle: SpindleTextInputHandle | null = null
   let operationPending = false
@@ -992,7 +1018,7 @@ export function setup(ctx: SpindleFrontendContext) {
     value: installmentDraft,
     placeholder: 'ZETA — S01E03',
     disabled: true,
-    ariaLabel: 'Title, episode, or chapter for the selected range',
+    ariaLabel: 'Title, episode, or chapter for the selected messages',
     className: 'threadverse-secondary-input',
     onChange: (value) => { installmentDraft = value },
   })
@@ -1434,31 +1460,33 @@ export function setup(ctx: SpindleFrontendContext) {
     }
   }
 
-  function selectedBounds(): [number, number] | null {
-    if (startIndex === null || endIndex === null) return null
-    return [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)]
+  function selectedMessages(): ChatMessageSummary[] {
+    return messages.filter((message) => selectedMessageIds.has(message.id))
   }
 
   function updateSummary(): void {
-    const bounds = selectedBounds()
-    installmentField.hidden = !bounds
-    installmentLabelHandle?.update({ disabled: !bounds || operationPending || generationPending })
-    if (!bounds) {
-      if (startIndex === null && endIndex === null) {
-        recentContext.textContent = 'Select a range below'
-      } else if (startIndex !== null) {
-        recentContext.textContent = `Start #${messages[startIndex]?.index} selected; choose the end`
-      } else {
-        recentContext.textContent = `End #${messages[endIndex!]?.index} selected; choose the start`
-      }
+    const selected = selectedMessages()
+    installmentField.hidden = selected.length === 0
+    installmentLabelHandle?.update({ disabled: selected.length === 0 || operationPending || generationPending })
+    if (selected.length === 0) {
+      recentContext.textContent = 'Select messages below'
       saveButton.disabled = true
       return
     }
 
-    const count = bounds[1] - bounds[0] + 1
-    const rangeLabel = `#${messages[bounds[0]]?.index}-#${messages[bounds[1]]?.index}`
-    recentContext.textContent = `${rangeLabel} · ${count} message${count === 1 ? '' : 's'}`
+    const indexLabel = selected.length <= 5
+      ? selected.map((message) => `#${message.index}`).join(', ')
+      : `#${selected[0].index}…#${selected.at(-1)!.index}`
+    recentContext.textContent = `${indexLabel} · ${selected.length} message${selected.length === 1 ? '' : 's'} selected`
     saveButton.disabled = operationPending || generationPending || !activeChat
+  }
+
+  function roundLabel(round: RoundSummary): string {
+    if (round.installmentLabel) return `Round ${round.sequence} — ${round.installmentLabel}`
+    const isContiguous = round.messageCount === round.endIndex - round.startIndex + 1
+    return isContiguous
+      ? `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`
+      : `Round ${round.sequence} (${round.messageCount} messages)`
   }
 
   function renderContinuity(): void {
@@ -1466,9 +1494,7 @@ export function setup(ctx: SpindleFrontendContext) {
     previousContext.textContent = rounds.length === 0
       ? 'None yet'
       : rounds
-        .map((round) => round.installmentLabel
-          ? `Round ${round.sequence} — ${round.installmentLabel}`
-          : `Round ${round.sequence} (${round.startIndex}-${round.endIndex})`)
+        .map(roundLabel)
         .join(' - ')
     resetButton.disabled = operationPending || generationPending || !activeChat || rounds.length === 0
     updateSummary()
@@ -1770,9 +1796,7 @@ export function setup(ctx: SpindleFrontendContext) {
       searchPlaceholder: 'Search rounds...',
       options: [...feeds].reverse().map((optionRound) => ({
         value: optionRound.id,
-        label: optionRound.installmentLabel
-          ? `Round ${optionRound.sequence} — ${optionRound.installmentLabel}`
-          : `Round ${optionRound.sequence} (${optionRound.startIndex}-${optionRound.endIndex})`,
+        label: roundLabel(optionRound),
         sublabel: activeVersion(optionRound) ? undefined : 'No feed generated',
       })),
       onChange: (roundId) => {
@@ -1816,7 +1840,6 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function renderMessages(): void {
     const query = search.value.trim().toLocaleLowerCase()
-    const bounds = selectedBounds()
     const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
     messageList.replaceChildren()
 
@@ -1839,38 +1862,32 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     for (const message of visible) {
-      const absoluteIndex = messages.findIndex((item) => item.id === message.id)
       const row = document.createElement('button')
       row.type = 'button'
       row.className = 'threadverse-message'
-      row.dataset.messageIndex = String(absoluteIndex)
+      row.dataset.messageId = message.id
+      row.setAttribute('role', 'checkbox')
+      row.setAttribute('aria-checked', String(selectedMessageIds.has(message.id)))
       if (usedIds.has(message.id)) {
         row.classList.add('is-used')
         row.disabled = true
         row.title = 'This message already belongs to a saved round.'
       }
-      if (bounds && absoluteIndex >= bounds[0] && absoluteIndex <= bounds[1]) row.classList.add('is-selected')
-      if (absoluteIndex === startIndex || absoluteIndex === endIndex) row.classList.add('is-endpoint')
+      if (selectedMessageIds.has(message.id)) row.classList.add('is-selected')
+
+      const checkbox = document.createElement('span')
+      checkbox.className = 'threadverse-message-checkbox'
+      checkbox.setAttribute('aria-hidden', 'true')
 
       const index = document.createElement('span')
       index.className = 'threadverse-message-index'
       index.textContent = `#${message.index}`
-      if (absoluteIndex === startIndex || absoluteIndex === endIndex) {
-        const marker = document.createElement('span')
-        marker.className = 'threadverse-message-marker'
-        marker.textContent = bounds
-          ? bounds[0] === bounds[1]
-            ? 'START / END'
-            : absoluteIndex === bounds[0] ? 'START' : 'END'
-          : absoluteIndex === startIndex ? 'START' : 'END'
-        index.appendChild(marker)
-      }
 
       const content = document.createElement('span')
       content.className = 'threadverse-message-content'
       content.textContent = message.content.replace(/\s+/g, ' ').trim() || '(empty message)'
 
-      row.append(index, content)
+      row.append(checkbox, index, content)
       messageList.appendChild(row)
     }
 
@@ -1878,34 +1895,31 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function clearSelection(): void {
-    startIndex = null
-    endIndex = null
+    selectedMessageIds = new Set()
+    selectionAnchorId = null
     clearInstallmentDraft()
     renderMessages()
   }
 
-  function rangeOverlapsSavedRound(first: number, last: number): boolean {
-    const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
-    return messages
-      .slice(Math.min(first, last), Math.max(first, last) + 1)
-      .some((message) => usedIds.has(message.id))
-  }
-
-  function selectMessage(index: number): void {
+  function selectMessage(messageId: string, addRange = false): void {
     clearError()
+    const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
+    if (usedIds.has(messageId) || !messages.some((message) => message.id === messageId)) return
 
-    const next = toggleRangeEndpoint({ startIndex, endIndex }, index)
-    if (
-      next.startIndex !== null
-      && next.endIndex !== null
-      && rangeOverlapsSavedRound(next.startIndex, next.endIndex)
-    ) {
-      showError('A range cannot include messages that already belong to a saved round.')
-      return
+    if (addRange && selectionAnchorId) {
+      selectedMessageIds = addMessageRange(
+        selectedMessageIds,
+        messages.map((message) => message.id),
+        selectionAnchorId,
+        messageId,
+        usedIds,
+      )
+    } else {
+      const wasSelected = selectedMessageIds.has(messageId)
+      selectedMessageIds = toggleMessageSelection(selectedMessageIds, messageId)
+      if (!wasSelected) selectionAnchorId = messageId
+      else if (selectionAnchorId === messageId) selectionAnchorId = null
     }
-
-    startIndex = next.startIndex
-    endIndex = next.endIndex
     renderMessages()
   }
 
@@ -1936,8 +1950,8 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function generateSelectedRange(): void {
-    const bounds = selectedBounds()
-    if (!bounds || !activeChat || operationPending || generationPending) return
+    const selected = selectedMessages()
+    if (selected.length === 0 || !activeChat || operationPending || generationPending) return
 
     setGenerationPending(true, true, {
       operation: 'generate', chatId: activeChat.id, outputTokens: 0, reasoningTokens: 0,
@@ -1950,8 +1964,7 @@ export function setup(ctx: SpindleFrontendContext) {
     send({
       type: 'threadverse:generate_thread',
       chatId: activeChat.id,
-      startMessageId: messages[bounds[0]].id,
-      endMessageId: messages[bounds[1]].id,
+      messageIds: selected.map((message) => message.id),
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
       installmentLabel: installmentDraft,
     })
@@ -2104,6 +2117,47 @@ export function setup(ctx: SpindleFrontendContext) {
     })
   }
 
+  function clearLongPress(): void {
+    if (longPressTimer) clearTimeout(longPressTimer)
+    longPressTimer = null
+    longPressPointerId = null
+    longPressMessageId = null
+  }
+
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.pointerType === 'mouse' || event.button !== 0) return
+    const row = (event.target as Element).closest<HTMLButtonElement>('[data-message-id]')
+    if (!row || row.disabled) return
+    suppressClickMessageId = null
+    clearLongPress()
+    longPressPointerId = event.pointerId
+    longPressMessageId = row.dataset.messageId ?? null
+    longPressStartX = event.clientX
+    longPressStartY = event.clientY
+    longPressTimer = setTimeout(() => {
+      const messageId = longPressMessageId
+      if (!messageId) return
+      longPressTimer = null
+      suppressClickMessageId = messageId
+      selectMessage(messageId, Boolean(selectionAnchorId))
+    }, 500)
+  }
+
+  const onPointerMove = (event: PointerEvent) => {
+    if (event.pointerId !== longPressPointerId || !longPressTimer) return
+    if (Math.hypot(event.clientX - longPressStartX, event.clientY - longPressStartY) > 10) {
+      clearLongPress()
+    }
+  }
+
+  const onPointerEnd = (event: PointerEvent) => {
+    if (event.pointerId === longPressPointerId) clearLongPress()
+  }
+
+  const onContextMenu = (event: Event) => {
+    if ((event.target as Element).closest('[data-message-id]')) event.preventDefault()
+  }
+
   const onClick = (event: Event) => {
     const target = event.target as Element
     const tab = target.closest<HTMLButtonElement>('[data-tab]')
@@ -2112,9 +2166,15 @@ export function setup(ctx: SpindleFrontendContext) {
       return
     }
 
-    const row = target.closest<HTMLButtonElement>('[data-message-index]')
+    const row = target.closest<HTMLButtonElement>('[data-message-id]')
     if (row) {
-      selectMessage(Number(row.dataset.messageIndex))
+      const messageId = row.dataset.messageId!
+      if (suppressClickMessageId === messageId) {
+        suppressClickMessageId = null
+        return
+      }
+      suppressClickMessageId = null
+      selectMessage(messageId, event instanceof MouseEvent && event.shiftKey)
       return
     }
 
@@ -2150,6 +2210,11 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   shell.addEventListener('click', onClick)
+  shell.addEventListener('pointerdown', onPointerDown)
+  shell.addEventListener('pointermove', onPointerMove)
+  shell.addEventListener('pointerup', onPointerEnd)
+  shell.addEventListener('pointercancel', onPointerEnd)
+  shell.addEventListener('contextmenu', onContextMenu)
   search.addEventListener('input', renderMessages)
   unusedOnly.addEventListener('change', renderMessages)
   maintainFandomToggle.addEventListener('change', handleMaintainFandomChange)
@@ -2312,8 +2377,8 @@ export function setup(ctx: SpindleFrontendContext) {
       if (pendingFandomNotesSave && pendingFandomNotesSave.chatId !== message.chat?.id) {
         flushFandomNotesSave()
       }
-      const previousStartId = startIndex === null ? null : messages[startIndex]?.id
-      const previousEndId = endIndex === null ? null : messages[endIndex]?.id
+      const previousSelectedIds = new Set(selectedMessageIds)
+      const previousAnchorId = selectionAnchorId
       const previousChatId = activeChat?.id ?? null
       activeChat = message.chat
       const chatId = message.chat?.id ?? null
@@ -2330,14 +2395,18 @@ export function setup(ctx: SpindleFrontendContext) {
       rounds = message.rounds
       feeds = message.feedRounds
       if (previousChatId !== message.chat?.id || message.notice) clearInstallmentDraft()
-      if (message.notice) {
-        startIndex = null
-        endIndex = null
+      if (previousChatId !== message.chat?.id || message.notice) {
+        selectedMessageIds = new Set()
+        selectionAnchorId = null
       } else {
-        const nextStart = previousStartId ? messages.findIndex((item) => item.id === previousStartId) : -1
-        const nextEnd = previousEndId ? messages.findIndex((item) => item.id === previousEndId) : -1
-        startIndex = nextStart >= 0 ? nextStart : null
-        endIndex = nextEnd >= 0 ? nextEnd : null
+        const availableIds = new Set(messages.map((item) => item.id))
+        const usedIds = new Set(rounds.flatMap((round) => round.messageIds))
+        selectedMessageIds = new Set(
+          [...previousSelectedIds].filter((id) => availableIds.has(id) && !usedIds.has(id)),
+        )
+        selectionAnchorId = previousAnchorId && selectedMessageIds.has(previousAnchorId)
+          ? previousAnchorId
+          : null
       }
       clearError()
       if (message.error && message.chat) showError(message.error)
@@ -2371,10 +2440,16 @@ export function setup(ctx: SpindleFrontendContext) {
     if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
     clearGenerationStartTimer()
+    clearLongPress()
     unsubscribeActivate()
     for (const unsubscribe of chatEventUnsubscribers) unsubscribe()
     unsubscribeBackend()
     shell.removeEventListener('click', onClick)
+    shell.removeEventListener('pointerdown', onPointerDown)
+    shell.removeEventListener('pointermove', onPointerMove)
+    shell.removeEventListener('pointerup', onPointerEnd)
+    shell.removeEventListener('pointercancel', onPointerEnd)
+    shell.removeEventListener('contextmenu', onContextMenu)
     feedRoundHandle?.destroy()
     deleteChoiceModal?.dismiss()
     deleteChoiceModal = null

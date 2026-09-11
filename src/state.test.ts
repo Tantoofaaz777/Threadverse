@@ -10,7 +10,7 @@ import {
   serializeFeedAsPlainText,
   serializeFeedForContinuity,
 } from './feed'
-import { toggleRangeEndpoint } from './range-selection'
+import { addMessageRange, orderSelectedMessageIds, toggleMessageSelection } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { resolveFeedSwipe } from './feed-swipe'
 import { DEFAULT_FEED_FONT_SCALE, isFrontendMessage } from './shared'
@@ -76,8 +76,7 @@ describe('Threadverse continuity', () => {
     expect(isFrontendMessage({
       type: 'threadverse:generate_thread',
       chatId: 'chat',
-      startMessageId: 'm1',
-      endMessageId: 'm2',
+      messageIds: ['m1', 'm3'],
       installmentLabel: 'ZETA — S01E03',
     })).toBe(true)
     expect(isFrontendMessage({
@@ -88,15 +87,32 @@ describe('Threadverse continuity', () => {
     })).toBe(true)
   })
 
-  test('clicking either selected endpoint toggles only that endpoint off', () => {
-    expect(toggleRangeEndpoint({ startIndex: 4, endIndex: 9 }, 9)).toEqual({
-      startIndex: 4,
-      endIndex: null,
-    })
-    expect(toggleRangeEndpoint({ startIndex: 4, endIndex: 9 }, 4)).toEqual({
-      startIndex: null,
-      endIndex: 9,
-    })
+  test('toggles individual messages without filling the gaps', () => {
+    const first = toggleMessageSelection(new Set(), 'm1')
+    const sparse = toggleMessageSelection(first, 'm3')
+    expect([...sparse]).toEqual(['m1', 'm3'])
+    expect([...toggleMessageSelection(sparse, 'm1')]).toEqual(['m3'])
+  })
+
+  test('adds an anchored range while skipping unavailable messages', () => {
+    const selected = addMessageRange(
+      new Set(['m8']),
+      ['m1', 'm2', 'm3', 'm4', 'm5'],
+      'm1',
+      'm5',
+      new Set(['m3']),
+    )
+    expect([...selected]).toEqual(['m8', 'm1', 'm2', 'm4', 'm5'])
+  })
+
+  test('orders a sparse selection by chat chronology and rejects stale selections', () => {
+    expect(orderSelectedMessageIds(
+      ['m1', 'm2', 'm3', 'm4'],
+      ['m4', 'm1', 'm3'],
+    )).toEqual(['m1', 'm3', 'm4'])
+    expect(orderSelectedMessageIds(['m1', 'm2'], ['m1', 'missing'])).toBeNull()
+    expect(orderSelectedMessageIds(['m1', 'm2'], ['m1', 'm1'])).toBeNull()
+    expect(orderSelectedMessageIds(['m1', 'm2'], [])).toBeNull()
   })
 
   test('fills defaults when loading an older state file', () => {

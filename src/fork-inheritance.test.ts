@@ -194,6 +194,32 @@ describe('fork continuity inheritance', () => {
     expect(secondFork.rounds[0].messages.map((item) => item.id)).toEqual(['b0', 'b1'])
   })
 
+  test('inherits sparse round messages without filling their gaps', () => {
+    const source = continuity('source', [
+      round('sparse-round', 1, [message('s0', 1), message('s2', 3), message('s4', 5)]),
+    ])
+
+    const result = inheritContinuityForFork({
+      source,
+      forkChatId: 'fork',
+      forkChatName: 'Fork',
+      sourceChatId: 'source',
+      sourceMessages: references('s', 4),
+      forkMessages: references('f', 4),
+      forkedAtMessageIndex: 4,
+      idFactory: sequentialIds(),
+    })
+
+    expect(result.continuity.rounds[0]).toMatchObject({
+      startMessageId: 'f0',
+      endMessageId: 'f4',
+      startIndex: 1,
+      endIndex: 5,
+      messageCount: 3,
+      messages: [{ id: 'f0', index: 1 }, { id: 'f2', index: 3 }, { id: 'f4', index: 5 }],
+    })
+  })
+
   test('a persistent marker makes inheritance idempotent even after continuity reset', () => {
     const marked = continuity('fork', [])
     marked.forkSourceChatId = 'source'

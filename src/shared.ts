@@ -125,8 +125,7 @@ export type FrontendToBackendMessage =
   | {
       type: 'threadverse:generate_thread'
       chatId: string
-      startMessageId: string
-      endMessageId: string
+      messageIds: string[]
       fandomNotes?: string
       installmentLabel?: string
     }
