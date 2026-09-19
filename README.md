@@ -12,6 +12,7 @@ The extension currently includes:
 - the `Feed`, `Make`, and `Settings` navigation shell;
 - active-chat message loading with success-themed individual checkboxes, Shift-click desktop ranges, and long-press mobile ranges;
 - a compact two-line selection summary with post-regex Recent Context tokens and an estimated full-prompt token count covering every assembled section;
+- browser-native mobile-friendly dropdowns for connections, continuity modes, instruction presets, and Feed rounds;
 - optional free-form title, episode, or chapter labels stored with each selected round;
 - per-user, per-chat chronological round persistence;
 - automatic fork inheritance for complete pre-fork rounds, feed swipes, and Fandom Notes, including nested and previously created forks;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.0
+
+- Replace Spindle dropdown components with browser-native selects for the connection, continuity modes, instruction presets, and Feed round picker.
+- Preserve Threadverse theme colors and Lumiverse corner radius while allowing mobile browsers to use their native selection UI.
+- Shorten the Make selection summary from `messages selected` to `msgs selected` for better mobile fit.
+
 ## 1.12.0
 
 - Replace selected message indexes in the Make summary with a cleaner selected-message count and Recent Context token count.

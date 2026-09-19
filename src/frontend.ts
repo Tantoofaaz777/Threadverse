@@ -2,7 +2,6 @@ import type {
   SpindleFrontendContext,
   SpindleModalHandle,
   SpindleNumericInputHandle,
-  SpindleSelectHandle,
   SpindleTextAreaHandle,
   SpindleTextInputHandle,
 } from 'lumiverse-spindle-types'
@@ -555,6 +554,24 @@ const STYLES = `
     border-radius: var(--lumiverse-radius, 8px);
   }
 
+  .threadverse-native-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 7px 9px;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lumiverse-radius, 8px);
+    background: var(--lumiverse-secondary, rgba(128, 128, 128, .15));
+    color: var(--lumiverse-text);
+    font: inherit;
+    font-size: 11px;
+  }
+
+  .threadverse-native-select:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+  }
+
   .threadverse-settings-label {
     color: var(--lumiverse-text);
     font-size: 10px;
@@ -886,7 +903,13 @@ export function setup(ctx: SpindleFrontendContext) {
   let rounds: RoundSummary[] = []
   let feeds: FeedRound[] = []
   let selectedFeedRoundId: string | null = null
-  let feedRoundHandle: SpindleSelectHandle | null = null
+  interface BrowserSelectHandle {
+    element: HTMLSelectElement
+    update(options: { value?: string; disabled?: boolean }): void
+    destroy(): void
+  }
+
+  let feedRoundHandle: BrowserSelectHandle | null = null
   let deleteChoiceModal: SpindleModalHandle | null = null
   let selectedMessageIds = new Set<string>()
   let selectionAnchorId: string | null = null
@@ -925,10 +948,10 @@ export function setup(ctx: SpindleFrontendContext) {
   let settingsRegexScripts: RegexScriptSummary[] = []
   let settingsRegexScriptsPermissionGranted = false
   let defaultInstructions = ''
-  let fandomContinuityModeHandle: SpindleSelectHandle | null = null
+  let fandomContinuityModeHandle: BrowserSelectHandle | null = null
   let fandomThreadsHandle: SpindleNumericInputHandle | null = null
   let fandomTokensHandle: SpindleNumericInputHandle | null = null
-  let instructionPresetHandle: SpindleSelectHandle | null = null
+  let instructionPresetHandle: BrowserSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let fandomNotesHandle: SpindleTextAreaHandle | null = null
   let fandomNotesDraftChatId: string | null = null
@@ -1054,6 +1077,59 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function settingTarget(name: string): HTMLElement {
     return shell.querySelector<HTMLElement>(`[data-setting="${name}"]`)!
+  }
+
+  function mountBrowserSelect(
+    target: HTMLElement,
+    options: {
+      value: string
+      choices: Array<{ value: string; label: string; sublabel?: string; disabled?: boolean }>
+      placeholder?: string
+      disabled?: boolean
+      ariaLabel: string
+      onChange(value: string): void
+    },
+  ): BrowserSelectHandle {
+    const select = document.createElement('select')
+    select.className = 'threadverse-native-select'
+    select.disabled = options.disabled ?? false
+    select.setAttribute('aria-label', options.ariaLabel)
+
+    if (options.placeholder) {
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = options.placeholder
+      placeholder.disabled = options.choices.length > 0
+      select.appendChild(placeholder)
+    }
+    for (const choice of options.choices) {
+      const option = document.createElement('option')
+      option.value = choice.value
+      option.textContent = choice.sublabel
+        ? `${choice.label} — ${choice.sublabel}`
+        : choice.label
+      option.disabled = choice.disabled ?? false
+      select.appendChild(option)
+    }
+    select.value = options.value
+    if (!select.value && options.choices.length > 0 && !options.placeholder) {
+      select.value = options.choices[0].value
+    }
+    const onChange = () => options.onChange(select.value)
+    select.addEventListener('change', onChange)
+    target.replaceChildren(select)
+
+    return {
+      element: select,
+      update(update) {
+        if (update.value !== undefined) select.value = update.value
+        if (update.disabled !== undefined) select.disabled = update.disabled
+      },
+      destroy() {
+        select.removeEventListener('change', onChange)
+        select.remove()
+      },
+    }
   }
 
   installmentLabelHandle = ctx.components.mountTextInput(settingTarget('installment-label'), {
@@ -1214,17 +1290,14 @@ export function setup(ctx: SpindleFrontendContext) {
     settingsRegexScripts = regexScripts
     settingsRegexScriptsPermissionGranted = regexScriptsPermissionGranted
     updateSummary()
-    const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
+    const connectionHandle = mountBrowserSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
-      searchPlaceholder: 'Search connections...',
-      emptyMessage: 'No Lumiverse LLM connections are available.',
       disabled: connections.length === 0,
-      triggerClassName: 'threadverse-secondary-input',
-      options: connections.map((connection) => ({
+      ariaLabel: 'Lumiverse connection',
+      choices: connections.map((connection) => ({
         value: connection.id,
         label: connection.name,
-        sublabel: `${connection.provider} · ${connection.model || 'No default model'}`,
       })),
       onChange: (connectionId) => {
         if (!settingsDraft) return
@@ -1290,14 +1363,13 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     showPreviousContextMode(settingsDraft.previousContextMode)
 
-    const previousContextModeHandle = ctx.components.mountSelect(settingTarget('previous-context-mode'), {
+    const previousContextModeHandle = mountBrowserSelect(settingTarget('previous-context-mode'), {
       value: settingsDraft.previousContextMode,
-      options: [
+      ariaLabel: 'Previous context mode',
+      choices: [
         { value: 'ranges', label: 'Ranges' },
         { value: 'tokens', label: 'Tokens' },
       ],
-      searchThreshold: 3,
-      triggerClassName: 'threadverse-secondary-input',
       onChange: (mode) => {
         if (!settingsDraft || (mode !== 'ranges' && mode !== 'tokens')) return
         settingsDraft.previousContextMode = mode
@@ -1346,14 +1418,13 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     showFandomContinuityMode(settingsDraft.fandomContinuityMode)
 
-    fandomContinuityModeHandle = ctx.components.mountSelect(settingTarget('fandom-continuity-mode'), {
+    fandomContinuityModeHandle = mountBrowserSelect(settingTarget('fandom-continuity-mode'), {
       value: settingsDraft.fandomContinuityMode,
-      options: [
+      ariaLabel: 'Fandom continuity mode',
+      choices: [
         { value: 'threads', label: 'Threads' },
         { value: 'tokens', label: 'Tokens' },
       ],
-      searchThreshold: 3,
-      triggerClassName: 'threadverse-secondary-input',
       disabled: !settingsDraft.maintainFandomContinuity,
       onChange: (mode) => {
         if (!settingsDraft || (mode !== 'threads' && mode !== 'tokens')) return
@@ -1424,14 +1495,13 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const activePreset = getActiveInstructionPreset() ?? settingsDraft.instructionPresets[0]
     settingsDraft.activeInstructionPresetId = activePreset.id
-    instructionPresetHandle = ctx.components.mountSelect(settingTarget('instruction-preset'), {
+    instructionPresetHandle = mountBrowserSelect(settingTarget('instruction-preset'), {
       value: activePreset.id,
-      options: settingsDraft.instructionPresets.map((preset) => ({
+      ariaLabel: 'Instruction preset',
+      choices: settingsDraft.instructionPresets.map((preset) => ({
         value: preset.id,
         label: preset.name,
       })),
-      searchThreshold: 6,
-      searchPlaceholder: 'Search presets...',
       onChange: (presetId) => {
         if (!settingsDraft) return
         const preset = settingsDraft.instructionPresets.find((candidate) => candidate.id === presetId)
@@ -1440,7 +1510,6 @@ export function setup(ctx: SpindleFrontendContext) {
         instructionsHandle?.update({ value: preset.instructions })
         updateSummary()
       },
-      triggerClassName: 'threadverse-secondary-input',
     })
 
     instructionsHandle = ctx.components.mountTextArea(settingTarget('instructions'), {
@@ -1718,7 +1787,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const tokenLabel = recentContextTokenCount !== null
       ? ` · ${recentContextTokenApproximate ? '~' : ''}${recentContextTokenCount.toLocaleString('en-US')} token${recentContextTokenCount === 1 ? '' : 's'}`
       : recentContextTokenPending ? ' · counting tokens…' : ''
-    recentContext.textContent = `${selected.length} message${selected.length === 1 ? '' : 's'} selected${tokenLabel}`
+    recentContext.textContent = `${selected.length} msg${selected.length === 1 ? '' : 's'} selected${tokenLabel}`
     fullPromptTokens.hidden = false
     fullPromptTokens.textContent = fullPromptTokenCount !== null
       ? `Full prompt · ~${fullPromptTokenCount.toLocaleString('en-US')} token${fullPromptTokenCount === 1 ? '' : 's'}`
@@ -2035,13 +2104,11 @@ export function setup(ctx: SpindleFrontendContext) {
     deleteButton.append(actionIcon('trash'), document.createTextNode('Delete'))
     toolbar.append(selectTarget, copyButton, deleteButton)
     feedList.appendChild(toolbar)
-    feedRoundHandle = ctx.components.mountSelect(selectTarget, {
+    feedRoundHandle = mountBrowserSelect(selectTarget, {
       value: round.id,
       disabled: generationPending || operationPending,
-      triggerClassName: 'threadverse-secondary-input',
-      searchThreshold: 6,
-      searchPlaceholder: 'Search rounds...',
-      options: [...feeds].reverse().map((optionRound) => ({
+      ariaLabel: 'Fandom thread round',
+      choices: [...feeds].reverse().map((optionRound) => ({
         value: optionRound.id,
         label: roundLabel(optionRound),
         sublabel: activeVersion(optionRound) ? undefined : 'No feed generated',
