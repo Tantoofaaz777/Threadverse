@@ -50,7 +50,9 @@ export const DEFAULT_SETTINGS: ThreadverseSettings = {
   maxOutputTokens: null,
   temperature: null,
   topP: null,
+  previousContextMode: 'ranges',
   previousRangeLimit: null,
+  previousContextTokenLimit: null,
   fandomThreadLimit: null,
   maintainFandomContinuity: true,
   feedFontScale: DEFAULT_FEED_FONT_SCALE,
@@ -72,11 +74,14 @@ export const DEFAULT_SAMPLERS = {
 
 export const DEFAULT_CONTINUITY = {
   previousRangeLimit: 3,
+  previousContextTokenLimit: 8000,
   fandomThreadLimit: 3,
 } as const
 
 export interface ResolvedContinuity {
+  previousContextMode: 'ranges' | 'tokens'
   previousRangeLimit: number
+  previousContextTokenLimit: number
   fandomThreadLimit: number
 }
 
@@ -96,7 +101,9 @@ export function resolveSamplers(settings: ThreadverseSettings): ResolvedSamplers
 
 export function resolveContinuity(settings: ThreadverseSettings): ResolvedContinuity {
   return {
+    previousContextMode: settings.previousContextMode,
     previousRangeLimit: settings.previousRangeLimit ?? DEFAULT_CONTINUITY.previousRangeLimit,
+    previousContextTokenLimit: settings.previousContextTokenLimit ?? DEFAULT_CONTINUITY.previousContextTokenLimit,
     fandomThreadLimit: settings.fandomThreadLimit ?? DEFAULT_CONTINUITY.fandomThreadLimit,
   }
 }
@@ -348,7 +355,9 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     maxOutputTokens: storedOptionalNumber(savedWithoutLegacyFields.maxOutputTokens, 1, 200000, true),
     temperature: storedOptionalNumber(savedWithoutLegacyFields.temperature, 0, 5),
     topP: storedOptionalNumber(savedWithoutLegacyFields.topP, 0, 1),
+    previousContextMode: savedWithoutLegacyFields.previousContextMode === 'tokens' ? 'tokens' : 'ranges',
     previousRangeLimit: storedOptionalNumber(savedWithoutLegacyFields.previousRangeLimit, 0, 50, true),
+    previousContextTokenLimit: storedOptionalNumber(savedWithoutLegacyFields.previousContextTokenLimit, 0, 2_000_000, true),
     fandomThreadLimit: storedOptionalNumber(savedWithoutLegacyFields.fandomThreadLimit, 0, 50, true),
     maintainFandomContinuity: typeof savedWithoutLegacyFields.maintainFandomContinuity === 'boolean'
       ? savedWithoutLegacyFields.maintainFandomContinuity
@@ -369,6 +378,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (mergedSettings.temperature === DEFAULT_SAMPLERS.temperature) mergedSettings.temperature = null
   if (mergedSettings.topP === DEFAULT_SAMPLERS.topP) mergedSettings.topP = null
   if (mergedSettings.previousRangeLimit === DEFAULT_CONTINUITY.previousRangeLimit) mergedSettings.previousRangeLimit = null
+  if (mergedSettings.previousContextTokenLimit === DEFAULT_CONTINUITY.previousContextTokenLimit) mergedSettings.previousContextTokenLimit = null
   if (mergedSettings.fandomThreadLimit === DEFAULT_CONTINUITY.fandomThreadLimit) mergedSettings.fandomThreadLimit = null
 
   return {

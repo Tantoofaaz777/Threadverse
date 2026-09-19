@@ -540,6 +540,8 @@ const STYLES = `
     min-width: 0;
   }
 
+  .threadverse-settings-field[hidden] { display: none; }
+
   .threadverse-settings-field--wide { grid-column: 1 / -1; }
 
   .threadverse-secondary-input {
@@ -757,8 +759,16 @@ export function setup(ctx: SpindleFrontendContext) {
           <h3 class="threadverse-eyebrow">Continuity</h3>
           <div class="threadverse-settings-grid">
             <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Previous context by</span>
+              <div data-setting="previous-context-mode"></div>
+            </label>
+            <label class="threadverse-settings-field" data-previous-ranges-field>
               <span class="threadverse-settings-label">Previous story ranges</span>
               <div data-setting="previous-ranges"></div>
+            </label>
+            <label class="threadverse-settings-field" data-previous-tokens-field hidden>
+              <span class="threadverse-settings-label">Previous context tokens</span>
+              <div data-setting="previous-tokens"></div>
             </label>
             <label class="threadverse-settings-field">
               <span class="threadverse-settings-label">Previous fandom threads</span>
@@ -847,6 +857,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
   const deleteInstructionPresetButton = shell.querySelector<HTMLButtonElement>('[data-action="delete-instruction-preset"]')!
   const maintainFandomToggle = shell.querySelector<HTMLInputElement>('[data-maintain-fandom]')!
+  const previousRangesField = shell.querySelector<HTMLElement>('[data-previous-ranges-field]')!
+  const previousTokensField = shell.querySelector<HTMLElement>('[data-previous-tokens-field]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -1234,6 +1246,28 @@ export function setup(ctx: SpindleFrontendContext) {
       },
     })
 
+    const showPreviousContextMode = (mode: 'ranges' | 'tokens'): void => {
+      previousRangesField.hidden = mode !== 'ranges'
+      previousTokensField.hidden = mode !== 'tokens'
+    }
+    showPreviousContextMode(settingsDraft.previousContextMode)
+
+    const previousContextModeHandle = ctx.components.mountSelect(settingTarget('previous-context-mode'), {
+      value: settingsDraft.previousContextMode,
+      options: [
+        { value: 'ranges', label: 'Ranges' },
+        { value: 'tokens', label: 'Tokens' },
+      ],
+      searchThreshold: 3,
+      triggerClassName: 'threadverse-secondary-input',
+      onChange: (mode) => {
+        if (!settingsDraft || (mode !== 'ranges' && mode !== 'tokens')) return
+        settingsDraft.previousContextMode = mode
+        showPreviousContextMode(mode)
+        scheduleAutomaticSave()
+      },
+    })
+
     const previousRangesHandle = ctx.components.mountNumericInput(settingTarget('previous-ranges'), {
       value: settingsDraft.previousRangeLimit,
       allowEmpty: true,
@@ -1246,6 +1280,23 @@ export function setup(ctx: SpindleFrontendContext) {
       onChange: (value) => {
         if (settingsDraft) {
           settingsDraft.previousRangeLimit = value
+          scheduleAutomaticSave()
+        }
+      },
+    })
+
+    const previousTokensHandle = ctx.components.mountNumericInput(settingTarget('previous-tokens'), {
+      value: settingsDraft.previousContextTokenLimit,
+      allowEmpty: true,
+      placeholder: '8000',
+      min: 0,
+      max: 2_000_000,
+      step: 1,
+      integer: true,
+      className: 'threadverse-secondary-input',
+      onChange: (value) => {
+        if (settingsDraft) {
+          settingsDraft.previousContextTokenLimit = value
           scheduleAutomaticSave()
         }
       },
@@ -1328,7 +1379,9 @@ export function setup(ctx: SpindleFrontendContext) {
       maxTokensHandle,
       temperatureHandle,
       topPHandle,
+      previousContextModeHandle,
       previousRangesHandle,
+      previousTokensHandle,
       fandomThreadsHandle,
       feedFontScaleHandle,
       instructionPresetHandle,
@@ -1350,7 +1403,9 @@ export function setup(ctx: SpindleFrontendContext) {
         maxOutputTokens: settingsDraft.maxOutputTokens,
         temperature: settingsDraft.temperature,
         topP: settingsDraft.topP,
+        previousContextMode: settingsDraft.previousContextMode,
         previousRangeLimit: settingsDraft.previousRangeLimit,
+        previousContextTokenLimit: settingsDraft.previousContextTokenLimit,
         fandomThreadLimit: settingsDraft.fandomThreadLimit,
         maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
         feedFontScale: settingsDraft.feedFontScale,

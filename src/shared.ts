@@ -3,6 +3,7 @@ export const MIN_FEED_FONT_SCALE = 100
 export const MAX_FEED_FONT_SCALE = 160
 
 export type ThreadverseTab = 'feed' | 'make' | 'settings'
+export type PreviousContextMode = 'ranges' | 'tokens'
 
 export interface ChatMessageSummary {
   id: string
@@ -58,7 +59,9 @@ export interface ThreadverseSettingsPayload {
   maxOutputTokens: number | null
   temperature: number | null
   topP: number | null
+  previousContextMode: PreviousContextMode
   previousRangeLimit: number | null
+  previousContextTokenLimit: number | null
   fandomThreadLimit: number | null
   maintainFandomContinuity: boolean
   feedFontScale: number
@@ -72,7 +75,9 @@ export type ThreadverseAutomaticSettings = Pick<ThreadverseSettingsPayload,
   | 'maxOutputTokens'
   | 'temperature'
   | 'topP'
+  | 'previousContextMode'
   | 'previousRangeLimit'
+  | 'previousContextTokenLimit'
   | 'fandomThreadLimit'
   | 'maintainFandomContinuity'
   | 'feedFontScale'

@@ -3,6 +3,7 @@ import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
   installmentOrRoundLabel,
+  selectPreviousContextByTokenBudget,
 } from './prompt'
 import {
   parseGeneratedThreadverseFeed,
@@ -125,12 +126,16 @@ describe('Threadverse continuity', () => {
       version: 1,
       chats: {},
       settings: {
+        previousContextMode: 'tokens',
         previousRangeLimit: 8,
+        previousContextTokenLimit: 12000,
         temperature: 0.75,
         outgoingRegexScriptIds: ['regex-1', 'regex-1', '', 42],
       },
     })
     expect(store.settings.previousRangeLimit).toBe(8)
+    expect(store.settings.previousContextMode).toBe('tokens')
+    expect(store.settings.previousContextTokenLimit).toBe(12000)
     expect(store.settings.temperature).toBe(0.75)
     expect(store.settings.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxOutputTokens)
     expect(store.settings.feedFontScale).toBe(DEFAULT_FEED_FONT_SCALE)
@@ -387,7 +392,9 @@ describe('Threadverse continuity', () => {
   test('uses continuity hints when optional continuity fields are empty', () => {
     const store = emptyStore()
     expect(resolveContinuity(store.settings)).toEqual({
+      previousContextMode: 'ranges',
       previousRangeLimit: 3,
+      previousContextTokenLimit: 8000,
       fandomThreadLimit: 3,
     })
 
@@ -432,13 +439,17 @@ describe('Threadverse continuity', () => {
       maxOutputTokens: 8000,
       temperature: 0.8,
       topP: 0.9,
+      previousContextMode: 'tokens',
       previousRangeLimit: 5,
+      previousContextTokenLimit: 12000,
       fandomThreadLimit: 4,
       maintainFandomContinuity: false,
       feedFontScale: 125,
     })
     expect(next.instructionPresets[0].instructions).toBe('Prompt draft')
     expect(next.temperature).toBe(0.8)
+    expect(next.previousContextMode).toBe('tokens')
+    expect(next.previousContextTokenLimit).toBe(12000)
     expect(next.feedFontScale).toBe(125)
     expect(next.outgoingRegexScriptIds).toEqual(['regex-1'])
   })
@@ -507,6 +518,22 @@ describe('Threadverse continuity', () => {
       '--- ZETA — S01E03 ---\nScene A\n\nScene B\n\n---\n\n--- ZETA — S01E04 ---\nScene C',
     )
     expect(prompt).toContain('>>> RECENT CONTEXT <<<\n\n--- ZETA — S01E05 ---\nCurrent scene')
+  })
+
+  test('keeps the newest whole messages within the Previous Context token budget', async () => {
+    const countMessagesAsTokens = async (text: string) => text.match(/message/g)?.length ?? 0
+    const selected = await selectPreviousContextByTokenBudget([
+      { label: 'CHAPTER 1', messages: ['old message 1', 'old message 2'] },
+      { label: 'CHAPTER 2', messages: ['new message 1', 'new message 2'] },
+    ], 3, countMessagesAsTokens)
+
+    expect(selected).toEqual([
+      { label: 'CHAPTER 1', content: 'old message 2' },
+      { label: 'CHAPTER 2', content: 'new message 1\n\nnew message 2' },
+    ])
+    expect(await selectPreviousContextByTokenBudget([
+      { label: 'CHAPTER 1', messages: ['one message'] },
+    ], 0, countMessagesAsTokens)).toEqual([])
   })
 
   test('uses only installment labels in fandom continuity with a legacy round fallback', () => {

@@ -24,6 +24,7 @@ import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
   installmentOrRoundLabel,
+  selectPreviousContextByTokenBudget,
 } from './prompt'
 import {
   DEFAULT_INSTRUCTIONS,
@@ -362,13 +363,18 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
   const connections = await getConnections(userId)
   const connection = input.connectionId ? connections.find((item) => item.id === input.connectionId) : null
   if (input.connectionId && !connection) throw new Error('Choose an available Lumiverse connection.')
+  if (input.previousContextMode !== 'ranges' && input.previousContextMode !== 'tokens') {
+    throw new Error('Previous context mode must be ranges or tokens.')
+  }
   const settings: ThreadverseAutomaticSettings = {
     connectionId: connection?.id ?? null,
     outgoingRegexScriptIds: validateStringIds(input.outgoingRegexScriptIds ?? [], 'Outgoing regex scripts'),
     maxOutputTokens: optionalNumber(input.maxOutputTokens, 'Max output tokens', 1, 200000, true),
     temperature: optionalNumber(input.temperature, 'Temperature', 0, 5),
     topP: optionalNumber(input.topP, 'Top P', 0, 1),
+    previousContextMode: input.previousContextMode,
     previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
+    previousContextTokenLimit: optionalNumber(input.previousContextTokenLimit, 'Previous context tokens', 0, 2_000_000, true),
     fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
     maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
     feedFontScale: requireNumber(
@@ -446,11 +452,14 @@ async function promptForRound(
   cutoff: number,
   installmentLabel: string,
   fandomNotesOverride?: string,
-  formatStoryMessages: (messages: ChatMessageSummary[]) => Promise<string> = async (messages) => formatMessages(messages),
+  transformStoryMessages: (messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]> = async (messages) => messages,
+  countPreviousTokens?: (text: string) => Promise<number>,
 ): Promise<string> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
-  const previous = limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
+  const previous = limits.previousContextMode === 'tokens'
+    ? earlier
+    : limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
   const fandomCandidates = earlier.flatMap((round) => {
     const version = activeFeedVersion(round)
     return version ? [{ round, feed: version.feed }] : []
@@ -459,16 +468,38 @@ async function promptForRound(
     ? fandomCandidates.slice(-limits.fandomThreadLimit) : []
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
-  const previousRanges: Array<{ label: string; content: string }> = []
+
+  const previousMessages = previous.flatMap((round) => round.messages)
+  const transformedMessages = await transformStoryMessages([...previousMessages, ...recent])
+  if (transformedMessages.length !== previousMessages.length + recent.length) {
+    throw new Error('Outgoing regex processing changed the story message count.')
+  }
+
+  const previousMessageRanges: Array<{ label: string; messages: string[] }> = []
+  let offset = 0
   for (const round of previous) {
-    previousRanges.push({
+    const transformedRound = transformedMessages.slice(offset, offset + round.messages.length)
+    offset += round.messages.length
+    previousMessageRanges.push({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
-      content: await formatStoryMessages(round.messages),
+      messages: transformedRound.map((message) => message.content),
     })
   }
-  const recentContent = await formatStoryMessages(recent)
+  const recentContent = formatMessages(transformedMessages.slice(offset))
+  let previousRanges = groupConsecutiveStoryRanges(previousMessageRanges.map((range) => ({
+    label: range.label,
+    content: range.messages.join('\n\n'),
+  })))
+  if (limits.previousContextMode === 'tokens') {
+    if (!countPreviousTokens) throw new Error('Token counting is unavailable for Previous Context.')
+    previousRanges = await selectPreviousContextByTokenBudget(
+      previousMessageRanges,
+      limits.previousContextTokenLimit,
+      countPreviousTokens,
+    )
+  }
   return buildThreadversePrompt({
-    previousRanges: groupConsecutiveStoryRanges(previousRanges),
+    previousRanges,
     recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
     fandomContinuity: fandom.map(({ round, feed }) => ({
       label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
@@ -498,7 +529,7 @@ async function runGeneration(
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
-  let formatStoryMessages = async (messages: ChatMessageSummary[]) => formatMessages(messages)
+  let transformStoryMessages = async (messages: ChatMessageSummary[]) => messages
   if (store.settings.outgoingRegexScriptIds.length > 0) {
     if (!spindle.permissions.has('regex_scripts')) {
       throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
@@ -531,7 +562,7 @@ async function runGeneration(
         }
         return text
       }
-      formatStoryMessages = async (messages) => formatMessages(await applyOutgoingRegexToMessages(
+      transformStoryMessages = async (messages) => applyOutgoingRegexToMessages(
         messages,
         selectedScripts,
         maxMessageIndex,
@@ -541,8 +572,15 @@ async function runGeneration(
           reportedWarnings.add(warning)
           spindle.log.warn(`[Threadverse] ${warning}`)
         },
-      ))
+      )
     }
+  }
+  const countPreviousTokens = async (text: string): Promise<number> => {
+    const result = await spindle.tokens.countText(text, {
+      ...(selectedConnection.model ? { model: selectedConnection.model } : {}),
+      userId,
+    })
+    return result.total_tokens
   }
   const unresolvedPrompt = await promptForRound(
     store,
@@ -551,7 +589,8 @@ async function runGeneration(
     cutoff,
     installmentLabel,
     fandomNotesOverride,
-    formatStoryMessages,
+    transformStoryMessages,
+    countPreviousTokens,
   )
   const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(unresolvedPrompt, {
     chatId,

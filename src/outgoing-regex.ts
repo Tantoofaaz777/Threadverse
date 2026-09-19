@@ -28,8 +28,9 @@ interface RegexWorkerRequest {
 }
 
 interface RegexWorkerResponse {
-  id: number
-  ok: boolean
+  id?: number
+  ready?: boolean
+  ok?: boolean
   output?: string
   replacements?: Array<{ index: number; matchLength: number; replacement: string }>
   error?: string
@@ -120,12 +121,17 @@ self.onmessage = (event) => {
     });
   }
 };
+self.postMessage({ ready: true });
 `
 
 class RegexRunner {
   private worker: Worker | null = null
   private workerUrl: string | null = null
   private nextId = 1
+  private ready: Promise<void> | null = null
+  private resolveReady: (() => void) | null = null
+  private rejectReady: ((error: Error) => void) | null = null
+  private readyTimer: ReturnType<typeof setTimeout> | null = null
   private pending: {
     id: number
     resolve: (response: RegexWorkerResponse) => void
@@ -133,11 +139,29 @@ class RegexRunner {
     timer: ReturnType<typeof setTimeout>
   } | null = null
 
-  private ensureWorker(): Worker {
-    if (this.worker) return this.worker
+  private async ensureWorker(): Promise<Worker> {
+    if (this.worker && this.ready) {
+      await this.ready
+      return this.worker
+    }
     const url = URL.createObjectURL(new Blob([REGEX_WORKER_SOURCE], { type: 'application/javascript' }))
     const worker = new Worker(url)
+    this.ready = new Promise<void>((resolve, reject) => {
+      this.resolveReady = resolve
+      this.rejectReady = reject
+    })
+    this.readyTimer = setTimeout(() => {
+      this.reset(new Error('Regex worker initialization timed out.'))
+    }, 5_000)
     worker.onmessage = (event: MessageEvent<RegexWorkerResponse>) => {
+      if (event.data.ready) {
+        if (this.readyTimer) clearTimeout(this.readyTimer)
+        this.readyTimer = null
+        this.resolveReady?.()
+        this.resolveReady = null
+        this.rejectReady = null
+        return
+      }
       if (!this.pending || event.data.id !== this.pending.id) return
       const pending = this.pending
       this.pending = null
@@ -147,6 +171,7 @@ class RegexRunner {
     worker.onerror = () => this.reset(new Error('Regex worker failed.'))
     this.worker = worker
     this.workerUrl = url
+    await this.ready
     return worker
   }
 
@@ -155,6 +180,12 @@ class RegexRunner {
     if (this.workerUrl) URL.revokeObjectURL(this.workerUrl)
     this.worker = null
     this.workerUrl = null
+    if (this.readyTimer) clearTimeout(this.readyTimer)
+    this.readyTimer = null
+    this.rejectReady?.(error ?? new Error('Regex worker stopped.'))
+    this.ready = null
+    this.resolveReady = null
+    this.rejectReady = null
     if (this.pending) {
       const pending = this.pending
       this.pending = null
@@ -166,7 +197,7 @@ class RegexRunner {
   async run(request: Omit<RegexWorkerRequest, 'id'>): Promise<RegexWorkerResponse> {
     if (this.pending) throw new Error('Regex worker received overlapping requests.')
     const id = this.nextId++
-    const worker = this.ensureWorker()
+    const worker = await this.ensureWorker()
     const response = await new Promise<RegexWorkerResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.reset(new Error(`Regex execution exceeded ${REGEX_EXECUTION_TIMEOUT_MS}ms.`))

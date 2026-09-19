@@ -8,6 +8,11 @@ export interface FandomThread {
   content: string
 }
 
+export interface StoryMessageRange {
+  label: string
+  messages: string[]
+}
+
 export interface ThreadversePromptInput {
   previousRanges: StoryRange[]
   recentRange: StoryRange
@@ -16,12 +21,44 @@ export interface ThreadversePromptInput {
   instructions: string
 }
 
-function renderBlocks<T extends { label: string; content: string }>(items: T[]): string {
+export function renderBlocks<T extends { label: string; content: string }>(items: T[]): string {
   if (items.length === 0) return ''
 
   return items
     .map((item) => `--- ${item.label} ---\n${item.content.trim()}`)
     .join('\n\n---\n\n')
+}
+
+function storyRangesFromSuffix(items: StoryMessageRange[], messageCount: number): StoryRange[] {
+  let remainingToSkip = Math.max(0, items.reduce((total, item) => total + item.messages.length, 0) - messageCount)
+  const selected: StoryRange[] = []
+  for (const item of items) {
+    const skippedHere = Math.min(remainingToSkip, item.messages.length)
+    remainingToSkip -= skippedHere
+    const messages = item.messages.slice(skippedHere)
+    if (messages.length > 0) selected.push({ label: item.label, content: messages.join('\n\n') })
+  }
+  return groupConsecutiveStoryRanges(selected)
+}
+
+export async function selectPreviousContextByTokenBudget(
+  items: StoryMessageRange[],
+  tokenBudget: number,
+  countTokens: (text: string) => Promise<number>,
+): Promise<StoryRange[]> {
+  const totalMessages = items.reduce((total, item) => total + item.messages.length, 0)
+  if (tokenBudget <= 0 || totalMessages === 0) return []
+
+  let minimum = 0
+  let maximum = totalMessages
+  while (minimum < maximum) {
+    const candidateCount = Math.ceil((minimum + maximum) / 2)
+    const candidate = storyRangesFromSuffix(items, candidateCount)
+    const tokens = await countTokens(renderBlocks(candidate))
+    if (tokens <= tokenBudget) minimum = candidateCount
+    else maximum = candidateCount - 1
+  }
+  return storyRangesFromSuffix(items, minimum)
 }
 
 export function groupConsecutiveStoryRanges(items: StoryRange[]): StoryRange[] {

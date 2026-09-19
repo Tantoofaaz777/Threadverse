@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0
+
+- Add a choice between range count and token budget for Previous Context.
+- In token mode, use the selected connection model's Lumiverse tokenizer and keep the newest whole messages that fit before restoring chronological order.
+- Keep Recent Context outside the Previous Context budget and retain range mode as the default for existing installations.
+- Match current Lumiverse outgoing-regex macro behavior and isolate regex execution behind the native 500 ms timeout without counting worker startup time.
+
 ## 1.8.0
 
 - Replace start/end range endpoints with independent message checkboxes.
