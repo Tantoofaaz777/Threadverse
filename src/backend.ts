@@ -1010,6 +1010,48 @@ async function saveFandomNotes(
   send({ type: 'threadverse:fandom_notes_save_result', chatId, notes }, userId)
 }
 
+async function countRecentContextTokens(
+  payload: Extract<import('./shared').FrontendToBackendMessage, { type: 'threadverse:count_recent_context_tokens' }>,
+  userId: string,
+): Promise<void> {
+  if (!Number.isSafeInteger(payload.requestId) || payload.requestId < 0) return
+  if (typeof payload.chatId !== 'string' || typeof payload.text !== 'string') return
+  if (payload.text.length > 2_000_000) return
+
+  const fallback = {
+    total_tokens: Math.ceil(payload.text.length / 4),
+    approximate: true,
+  }
+  let result: { total_tokens: number; approximate: boolean } = fallback
+  try {
+    const connections = await getConnections(userId)
+    const connection = selectConnection(connections, payload.connectionId)
+    result = await new Promise((resolve) => {
+      let settled = false
+      const finish = (value: { total_tokens: number; approximate: boolean }) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(value)
+      }
+      const timer = setTimeout(() => finish(fallback), 3000)
+      void spindle.tokens.countText(payload.text, {
+        ...(connection?.model ? { model: connection.model } : {}),
+        userId,
+      }).then(finish).catch(() => finish(fallback))
+    })
+  } catch {
+    result = fallback
+  }
+  send({
+    type: 'threadverse:recent_context_tokens',
+    requestId: payload.requestId,
+    chatId: payload.chatId,
+    totalTokens: result.total_tokens,
+    approximate: result.approximate,
+  }, userId)
+}
+
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
   if (!isFrontendMessage(payload)) return
   try {
@@ -1018,6 +1060,10 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
     if (payload.type === 'threadverse:load_settings') { await sendSettingsState(userId); return }
+    if (payload.type === 'threadverse:count_recent_context_tokens') {
+      await countRecentContextTokens(payload, userId)
+      return
+    }
     if (payload.type === 'threadverse:auto_save_settings') { await saveAutomaticSettings(payload.settings, userId); return }
     if (payload.type === 'threadverse:save_prompt') { await savePromptSettings(payload.settings, userId); return }
     if (payload.type === 'threadverse:save_fandom_notes') {

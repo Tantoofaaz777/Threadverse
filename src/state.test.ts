@@ -65,6 +65,13 @@ describe('Threadverse continuity', () => {
   test('accepts clipboard, fandom-note, and feed-version frontend messages', () => {
     expect(isFrontendMessage({ type: 'threadverse:copy_result', success: true })).toBe(true)
     expect(isFrontendMessage({
+      type: 'threadverse:count_recent_context_tokens',
+      requestId: 1,
+      chatId: 'chat',
+      connectionId: 'connection',
+      text: 'Selected context',
+    })).toBe(true)
+    expect(isFrontendMessage({
       type: 'threadverse:save_fandom_notes', chatId: 'chat', chatName: 'RP', notes: 'Remember this.',
     })).toBe(true)
     expect(isFrontendMessage({

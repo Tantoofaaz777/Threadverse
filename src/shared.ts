@@ -115,6 +115,13 @@ export interface RegexScriptSummary {
 export type FrontendToBackendMessage =
   | { type: 'threadverse:load_active_chat'; requestId: number }
   | { type: 'threadverse:load_settings' }
+  | {
+      type: 'threadverse:count_recent_context_tokens'
+      requestId: number
+      chatId: string
+      connectionId: string | null
+      text: string
+    }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
   | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
   | { type: 'threadverse:save_fandom_notes'; chatId: string; chatName: string; notes: string }
@@ -161,6 +168,13 @@ export type BackendToFrontendMessage =
     }
   | { type: 'threadverse:operation_error'; error: string }
   | {
+      type: 'threadverse:recent_context_tokens'
+      requestId: number
+      chatId: string
+      totalTokens: number
+      approximate: boolean
+    }
+  | {
       type: 'threadverse:mutation_completed'
       operation: 'select_feed_version' | 'delete_feed_version' | 'delete_round' | 'reset_continuity'
       chatId: string
@@ -206,6 +220,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
   const type = (value as { type?: unknown }).type
   return type === 'threadverse:load_active_chat'
     || type === 'threadverse:load_settings'
+    || type === 'threadverse:count_recent_context_tokens'
     || type === 'threadverse:auto_save_settings'
     || type === 'threadverse:save_prompt'
     || type === 'threadverse:save_fandom_notes'

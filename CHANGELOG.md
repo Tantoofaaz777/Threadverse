@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.2
+
+- Move live Recent Context token counting from the browser API to the extension backend for reliable completion.
+- Fall back to a `~`-marked estimate after a backend tokenizer timeout and add a final frontend watchdog so the counting state can never remain indefinitely.
+- Continue ignoring stale results after the selected messages, active chat, or connection changes.
+
 ## 1.10.1
 
 - Show a live token count after the selected-message count in Recent Context.

@@ -902,6 +902,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let generationStartTimer: ReturnType<typeof setTimeout> | null = null
   let recentContextTokenTimer: ReturnType<typeof setTimeout> | null = null
+  let recentContextTokenFallbackTimer: ReturnType<typeof setTimeout> | null = null
   let recentContextTokenRequest = 0
   let recentContextTokenKey = ''
   let recentContextTokenCount: number | null = null
@@ -1597,16 +1598,18 @@ export function setup(ctx: SpindleFrontendContext) {
     return (hash >>> 0).toString(36)
   }
 
-  function selectedConnectionModel(): string {
+  function selectedConnection(): ConnectionSummary | undefined {
     const connection = settingsConnections.find((item) => item.id === settingsDraft?.connectionId)
       ?? settingsConnections.find((item) => item.isDefault)
       ?? settingsConnections[0]
-    return connection?.model ?? ''
+    return connection
   }
 
   function resetRecentContextTokenCount(): void {
     if (recentContextTokenTimer) clearTimeout(recentContextTokenTimer)
+    if (recentContextTokenFallbackTimer) clearTimeout(recentContextTokenFallbackTimer)
     recentContextTokenTimer = null
+    recentContextTokenFallbackTimer = null
     recentContextTokenRequest += 1
     recentContextTokenKey = ''
     recentContextTokenCount = null
@@ -1621,35 +1624,35 @@ export function setup(ctx: SpindleFrontendContext) {
     }
 
     const text = selected.map((message) => message.content).join('\n\n')
-    const model = selectedConnectionModel()
-    const key = `${activeChat?.id ?? ''}:${model}:${selected.map((message) => message.id).join(',')}:${hashRecentContext(text)}`
+    const connection = selectedConnection()
+    const key = `${activeChat?.id ?? ''}:${connection?.id ?? ''}:${selected.map((message) => message.id).join(',')}:${hashRecentContext(text)}`
     if (key === recentContextTokenKey) return
 
     if (recentContextTokenTimer) clearTimeout(recentContextTokenTimer)
+    if (recentContextTokenFallbackTimer) clearTimeout(recentContextTokenFallbackTimer)
+    recentContextTokenFallbackTimer = null
     recentContextTokenKey = key
     recentContextTokenCount = null
     recentContextTokenApproximate = false
     recentContextTokenPending = true
     const request = ++recentContextTokenRequest
-    recentContextTokenTimer = setTimeout(async () => {
+    recentContextTokenTimer = setTimeout(() => {
       recentContextTokenTimer = null
-      try {
-        const result = ctx.tokens
-          ? await ctx.tokens.countText(text, model ? { model } : undefined)
-          : { total_tokens: Math.ceil(text.length / 4), approximate: true }
+      send({
+        type: 'threadverse:count_recent_context_tokens',
+        requestId: request,
+        chatId: activeChat?.id ?? '',
+        connectionId: connection?.id ?? null,
+        text,
+      })
+      recentContextTokenFallbackTimer = setTimeout(() => {
+        recentContextTokenFallbackTimer = null
         if (request !== recentContextTokenRequest || key !== recentContextTokenKey || !shell.isConnected) return
-        recentContextTokenCount = result.total_tokens
-        recentContextTokenApproximate = result.approximate
-      } catch {
-        if (request !== recentContextTokenRequest || key !== recentContextTokenKey || !shell.isConnected) return
-        recentContextTokenCount = null
-        recentContextTokenApproximate = false
-      } finally {
-        if (request === recentContextTokenRequest && key === recentContextTokenKey && shell.isConnected) {
-          recentContextTokenPending = false
-          updateSummary()
-        }
-      }
+        recentContextTokenCount = Math.ceil(text.length / 4)
+        recentContextTokenApproximate = true
+        recentContextTokenPending = false
+        updateSummary()
+      }, 5000)
     }, 180)
   }
 
@@ -2416,6 +2419,19 @@ export function setup(ctx: SpindleFrontendContext) {
 
   const unsubscribeBackend = ctx.onBackendMessage((payload: unknown) => {
     const message = payload as BackendToFrontendMessage
+    if (message.type === 'threadverse:recent_context_tokens') {
+      if (
+        message.requestId !== recentContextTokenRequest
+        || message.chatId !== activeChat?.id
+      ) return
+      if (recentContextTokenFallbackTimer) clearTimeout(recentContextTokenFallbackTimer)
+      recentContextTokenFallbackTimer = null
+      recentContextTokenCount = message.totalTokens
+      recentContextTokenApproximate = message.approximate
+      recentContextTokenPending = false
+      updateSummary()
+      return
+    }
     if (message.type === 'threadverse:generation_state') {
       clearGenerationStartTimer()
       if (message.status === 'progress') {
