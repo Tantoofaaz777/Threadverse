@@ -771,8 +771,16 @@ export function setup(ctx: SpindleFrontendContext) {
               <div data-setting="previous-tokens"></div>
             </label>
             <label class="threadverse-settings-field">
+              <span class="threadverse-settings-label">Fandom continuity by</span>
+              <div data-setting="fandom-continuity-mode"></div>
+            </label>
+            <label class="threadverse-settings-field" data-fandom-threads-field>
               <span class="threadverse-settings-label">Previous fandom threads</span>
               <div data-setting="fandom-threads"></div>
+            </label>
+            <label class="threadverse-settings-field" data-fandom-tokens-field hidden>
+              <span class="threadverse-settings-label">Fandom continuity tokens</span>
+              <div data-setting="fandom-tokens"></div>
             </label>
             <div class="threadverse-settings-field threadverse-settings-field--wide threadverse-switch-field">
               <span class="threadverse-settings-label">Maintain fandom continuity</span>
@@ -859,6 +867,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const maintainFandomToggle = shell.querySelector<HTMLInputElement>('[data-maintain-fandom]')!
   const previousRangesField = shell.querySelector<HTMLElement>('[data-previous-ranges-field]')!
   const previousTokensField = shell.querySelector<HTMLElement>('[data-previous-tokens-field]')!
+  const fandomThreadsField = shell.querySelector<HTMLElement>('[data-fandom-threads-field]')!
+  const fandomTokensField = shell.querySelector<HTMLElement>('[data-fandom-tokens-field]')!
 
   let activeTab: ThreadverseTab = 'make'
   let activeChat: { id: string; name: string } | null = null
@@ -897,7 +907,9 @@ export function setup(ctx: SpindleFrontendContext) {
   let settingsRegexScripts: RegexScriptSummary[] = []
   let settingsRegexScriptsPermissionGranted = false
   let defaultInstructions = ''
+  let fandomContinuityModeHandle: SpindleSelectHandle | null = null
   let fandomThreadsHandle: SpindleNumericInputHandle | null = null
+  let fandomTokensHandle: SpindleNumericInputHandle | null = null
   let instructionPresetHandle: SpindleSelectHandle | null = null
   let instructionsHandle: SpindleTextAreaHandle | null = null
   let fandomNotesHandle: SpindleTextAreaHandle | null = null
@@ -1043,7 +1055,9 @@ export function setup(ctx: SpindleFrontendContext) {
   function destroySettingsComponents(): void {
     for (const component of settingsComponents) component.destroy()
     settingsComponents = []
+    fandomContinuityModeHandle = null
     fandomThreadsHandle = null
+    fandomTokensHandle = null
     instructionPresetHandle = null
     instructionsHandle = null
   }
@@ -1302,6 +1316,29 @@ export function setup(ctx: SpindleFrontendContext) {
       },
     })
 
+    const showFandomContinuityMode = (mode: 'threads' | 'tokens'): void => {
+      fandomThreadsField.hidden = mode !== 'threads'
+      fandomTokensField.hidden = mode !== 'tokens'
+    }
+    showFandomContinuityMode(settingsDraft.fandomContinuityMode)
+
+    fandomContinuityModeHandle = ctx.components.mountSelect(settingTarget('fandom-continuity-mode'), {
+      value: settingsDraft.fandomContinuityMode,
+      options: [
+        { value: 'threads', label: 'Threads' },
+        { value: 'tokens', label: 'Tokens' },
+      ],
+      searchThreshold: 3,
+      triggerClassName: 'threadverse-secondary-input',
+      disabled: !settingsDraft.maintainFandomContinuity,
+      onChange: (mode) => {
+        if (!settingsDraft || (mode !== 'threads' && mode !== 'tokens')) return
+        settingsDraft.fandomContinuityMode = mode
+        showFandomContinuityMode(mode)
+        scheduleAutomaticSave()
+      },
+    })
+
     fandomThreadsHandle = ctx.components.mountNumericInput(settingTarget('fandom-threads'), {
       value: settingsDraft.fandomThreadLimit,
       allowEmpty: true,
@@ -1315,6 +1352,24 @@ export function setup(ctx: SpindleFrontendContext) {
       onChange: (value) => {
         if (settingsDraft) {
           settingsDraft.fandomThreadLimit = value
+          scheduleAutomaticSave()
+        }
+      },
+    })
+
+    fandomTokensHandle = ctx.components.mountNumericInput(settingTarget('fandom-tokens'), {
+      value: settingsDraft.fandomContinuityTokenLimit,
+      allowEmpty: true,
+      placeholder: '8000',
+      min: 0,
+      max: 2_000_000,
+      step: 1,
+      integer: true,
+      className: 'threadverse-secondary-input',
+      disabled: !settingsDraft.maintainFandomContinuity,
+      onChange: (value) => {
+        if (settingsDraft) {
+          settingsDraft.fandomContinuityTokenLimit = value
           scheduleAutomaticSave()
         }
       },
@@ -1382,7 +1437,9 @@ export function setup(ctx: SpindleFrontendContext) {
       previousContextModeHandle,
       previousRangesHandle,
       previousTokensHandle,
+      fandomContinuityModeHandle,
       fandomThreadsHandle,
+      fandomTokensHandle,
       feedFontScaleHandle,
       instructionPresetHandle,
       instructionsHandle,
@@ -1406,7 +1463,9 @@ export function setup(ctx: SpindleFrontendContext) {
         previousContextMode: settingsDraft.previousContextMode,
         previousRangeLimit: settingsDraft.previousRangeLimit,
         previousContextTokenLimit: settingsDraft.previousContextTokenLimit,
+        fandomContinuityMode: settingsDraft.fandomContinuityMode,
         fandomThreadLimit: settingsDraft.fandomThreadLimit,
+        fandomContinuityTokenLimit: settingsDraft.fandomContinuityTokenLimit,
         maintainFandomContinuity: settingsDraft.maintainFandomContinuity,
         feedFontScale: settingsDraft.feedFontScale,
       },
@@ -1422,7 +1481,9 @@ export function setup(ctx: SpindleFrontendContext) {
   function handleMaintainFandomChange(): void {
     if (!settingsDraft) return
     settingsDraft.maintainFandomContinuity = maintainFandomToggle.checked
+    fandomContinuityModeHandle?.update({ disabled: !maintainFandomToggle.checked })
     fandomThreadsHandle?.update({ disabled: !maintainFandomToggle.checked })
+    fandomTokensHandle?.update({ disabled: !maintainFandomToggle.checked })
     scheduleAutomaticSave()
   }
 

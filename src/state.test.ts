@@ -3,6 +3,7 @@ import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
   installmentOrRoundLabel,
+  selectNewestLabeledBlocksByTokenBudget,
   selectPreviousContextByTokenBudget,
 } from './prompt'
 import {
@@ -23,6 +24,7 @@ import {
   emptyStore,
   normalizeStore,
   pruneInactiveFeedVersions,
+  pruneInactiveFeedVersionsOutsideRounds,
   removeFeedVersion,
   resetContinuityRounds,
   resolveContinuity,
@@ -325,6 +327,13 @@ describe('Threadverse continuity', () => {
     zeroLimit.settings.fandomThreadLimit = 0
     expect(pruneInactiveFeedVersions(zeroLimit.chats.chat.rounds, zeroLimit.settings)).toBe(0)
     expect(zeroLimit.chats.chat.rounds.every((round) => round.feedVersions.length === 2)).toBe(true)
+
+    const tokenWindow = normalizeStore({ version: 1, chats: { chat: { rounds: rawRounds } } })
+    expect(pruneInactiveFeedVersionsOutsideRounds(
+      tokenWindow.chats.chat.rounds,
+      new Set(['round-2', 'round-4']),
+    )).toBe(2)
+    expect(tokenWindow.chats.chat.rounds.map((round) => round.feedVersions.length)).toEqual([1, 2, 1, 2])
   })
 
   test('rekeys recovered chats and repairs duplicate round IDs', () => {
@@ -395,7 +404,9 @@ describe('Threadverse continuity', () => {
       previousContextMode: 'ranges',
       previousRangeLimit: 3,
       previousContextTokenLimit: 8000,
+      fandomContinuityMode: 'threads',
       fandomThreadLimit: 3,
+      fandomContinuityTokenLimit: 8000,
     })
 
     store.settings.previousRangeLimit = 6
@@ -442,7 +453,9 @@ describe('Threadverse continuity', () => {
       previousContextMode: 'tokens',
       previousRangeLimit: 5,
       previousContextTokenLimit: 12000,
+      fandomContinuityMode: 'tokens',
       fandomThreadLimit: 4,
+      fandomContinuityTokenLimit: 10000,
       maintainFandomContinuity: false,
       feedFontScale: 125,
     })
@@ -450,6 +463,8 @@ describe('Threadverse continuity', () => {
     expect(next.temperature).toBe(0.8)
     expect(next.previousContextMode).toBe('tokens')
     expect(next.previousContextTokenLimit).toBe(12000)
+    expect(next.fandomContinuityMode).toBe('tokens')
+    expect(next.fandomContinuityTokenLimit).toBe(10000)
     expect(next.feedFontScale).toBe(125)
     expect(next.outgoingRegexScriptIds).toEqual(['regex-1'])
   })
@@ -534,6 +549,26 @@ describe('Threadverse continuity', () => {
     expect(await selectPreviousContextByTokenBudget([
       { label: 'CHAPTER 1', messages: ['one message'] },
     ], 0, countMessagesAsTokens)).toEqual([])
+  })
+
+  test('keeps only the newest whole fandom threads within its token budget', async () => {
+    const countThreadsAsTokens = async (text: string) => text.match(/thread/g)?.length ?? 0
+    const threads = [
+      { roundId: 'round-1', label: 'CHAPTER 1', content: 'old thread' },
+      { roundId: 'round-2', label: 'CHAPTER 2', content: 'middle thread' },
+      { roundId: 'round-3', label: 'CHAPTER 3', content: 'new thread' },
+    ]
+
+    expect(await selectNewestLabeledBlocksByTokenBudget(
+      threads,
+      2,
+      countThreadsAsTokens,
+    )).toEqual(threads.slice(-2))
+    expect(await selectNewestLabeledBlocksByTokenBudget(
+      threads,
+      0,
+      countThreadsAsTokens,
+    )).toEqual([])
   })
 
   test('uses only installment labels in fandom continuity with a legacy round fallback', () => {

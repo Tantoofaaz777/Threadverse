@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0
+
+- Add a choice between thread count and token budget for Fandom Continuity.
+- In token mode, use the selected connection model's Lumiverse tokenizer and keep the newest whole fandom threads that fit.
+- Preserve thread-count mode as the default for existing installations and use an 8000-token hint when the token field is empty.
+- Prune inactive feed swipes only after their round leaves the effective fandom window, including token-budget windows.
+
 ## 1.9.0
 
 - Add a choice between range count and token budget for Previous Context.

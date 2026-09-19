@@ -24,6 +24,7 @@ import {
   buildThreadversePrompt,
   groupConsecutiveStoryRanges,
   installmentOrRoundLabel,
+  selectNewestLabeledBlocksByTokenBudget,
   selectPreviousContextByTokenBudget,
 } from './prompt'
 import {
@@ -35,6 +36,7 @@ import {
   feedRounds,
   normalizeStore,
   pruneInactiveFeedVersions,
+  pruneInactiveFeedVersionsOutsideRounds,
   removeFeedVersion,
   resetContinuityRounds,
   resolveContinuity,
@@ -252,6 +254,15 @@ function toRegexScriptSummary(script: RegexScriptDTO): RegexScriptSummary {
   }
 }
 
+function selectConnection(
+  connections: ConnectionSummary[],
+  connectionId: string | null,
+): ConnectionSummary | undefined {
+  return connections.find((item) => item.id === connectionId)
+    ?? connections.find((item) => item.isDefault)
+    ?? connections[0]
+}
+
 async function getOutgoingRegexScripts(
   chat: { id: string; character_id?: string | null } | null,
   userId: string,
@@ -366,6 +377,9 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
   if (input.previousContextMode !== 'ranges' && input.previousContextMode !== 'tokens') {
     throw new Error('Previous context mode must be ranges or tokens.')
   }
+  if (input.fandomContinuityMode !== 'threads' && input.fandomContinuityMode !== 'tokens') {
+    throw new Error('Fandom continuity mode must be threads or tokens.')
+  }
   const settings: ThreadverseAutomaticSettings = {
     connectionId: connection?.id ?? null,
     outgoingRegexScriptIds: validateStringIds(input.outgoingRegexScriptIds ?? [], 'Outgoing regex scripts'),
@@ -375,7 +389,9 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
     previousContextMode: input.previousContextMode,
     previousRangeLimit: optionalNumber(input.previousRangeLimit, 'Previous story ranges', 0, 50, true),
     previousContextTokenLimit: optionalNumber(input.previousContextTokenLimit, 'Previous context tokens', 0, 2_000_000, true),
+    fandomContinuityMode: input.fandomContinuityMode,
     fandomThreadLimit: optionalNumber(input.fandomThreadLimit, 'Previous fandom threads', 0, 50, true),
+    fandomContinuityTokenLimit: optionalNumber(input.fandomContinuityTokenLimit, 'Fandom continuity tokens', 0, 2_000_000, true),
     maintainFandomContinuity: Boolean(input.maintainFandomContinuity),
     feedFontScale: requireNumber(
       input.feedFontScale ?? DEFAULT_FEED_FONT_SCALE,
@@ -453,7 +469,7 @@ async function promptForRound(
   installmentLabel: string,
   fandomNotesOverride?: string,
   transformStoryMessages: (messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]> = async (messages) => messages,
-  countPreviousTokens?: (text: string) => Promise<number>,
+  countContextTokens?: (text: string) => Promise<number>,
 ): Promise<string> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
@@ -462,10 +478,27 @@ async function promptForRound(
     : limits.previousRangeLimit === 0 ? [] : earlier.slice(-limits.previousRangeLimit)
   const fandomCandidates = earlier.flatMap((round) => {
     const version = activeFeedVersion(round)
-    return version ? [{ round, feed: version.feed }] : []
+    return version ? [{
+      roundId: round.id,
+      label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
+      content: serializeFeedForContinuity(version.feed),
+    }] : []
   })
-  const fandom = store.settings.maintainFandomContinuity && limits.fandomThreadLimit > 0
-    ? fandomCandidates.slice(-limits.fandomThreadLimit) : []
+  let fandom = store.settings.maintainFandomContinuity
+    ? fandomCandidates
+    : []
+  if (store.settings.maintainFandomContinuity) {
+    if (limits.fandomContinuityMode === 'tokens') {
+      if (!countContextTokens) throw new Error('Token counting is unavailable for Fandom Continuity.')
+      fandom = await selectNewestLabeledBlocksByTokenBudget(
+        fandomCandidates,
+        limits.fandomContinuityTokenLimit,
+        countContextTokens,
+      )
+    } else {
+      fandom = limits.fandomThreadLimit === 0 ? [] : fandomCandidates.slice(-limits.fandomThreadLimit)
+    }
+  }
   const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
 
@@ -491,23 +524,59 @@ async function promptForRound(
     content: range.messages.join('\n\n'),
   })))
   if (limits.previousContextMode === 'tokens') {
-    if (!countPreviousTokens) throw new Error('Token counting is unavailable for Previous Context.')
+    if (!countContextTokens) throw new Error('Token counting is unavailable for Previous Context.')
     previousRanges = await selectPreviousContextByTokenBudget(
       previousMessageRanges,
       limits.previousContextTokenLimit,
-      countPreviousTokens,
+      countContextTokens,
     )
   }
   return buildThreadversePrompt({
     previousRanges,
     recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
-    fandomContinuity: fandom.map(({ round, feed }) => ({
-      label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
-      content: serializeFeedForContinuity(feed),
-    })),
+    fandomContinuity: fandom,
     fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
     instructions: preset.instructions,
   })
+}
+
+async function pruneFeedVersionsOutsideFandomWindow(
+  rounds: StoredRound[],
+  settings: ThreadverseStore['settings'],
+  userId: string,
+): Promise<number> {
+  if (!settings.maintainFandomContinuity) return 0
+  const limits = resolveContinuity(settings)
+  if (limits.fandomContinuityMode === 'threads') {
+    return pruneInactiveFeedVersions(rounds, settings)
+  }
+  if (limits.fandomContinuityTokenLimit <= 0) return 0
+
+  const candidates = rounds.flatMap((round) => {
+    const version = activeFeedVersion(round)
+    return version ? [{
+      roundId: round.id,
+      label: installmentOrRoundLabel(round.installmentLabel, round.sequence),
+      content: serializeFeedForContinuity(version.feed),
+    }] : []
+  })
+  const selectedConnection = selectConnection(await getConnections(userId), settings.connectionId)
+  if (!selectedConnection) return 0
+  const retained = await selectNewestLabeledBlocksByTokenBudget(
+    candidates,
+    limits.fandomContinuityTokenLimit,
+    async (text) => {
+      const result = await spindle.tokens.countText(text, {
+        ...(selectedConnection.model ? { model: selectedConnection.model } : {}),
+        userId,
+      })
+      return result.total_tokens
+    },
+  )
+  return pruneInactiveFeedVersionsOutsideRounds(
+    rounds,
+    new Set(retained.map((thread) => thread.roundId)),
+  )
 }
 
 async function runGeneration(
@@ -524,8 +593,7 @@ async function runGeneration(
 ) {
   const connections = await getConnections(userId)
   throwIfAborted(active)
-  const selectedConnection = connections.find((item) => item.id === store.settings.connectionId)
-    ?? connections.find((item) => item.isDefault) ?? connections[0]
+  const selectedConnection = selectConnection(connections, store.settings.connectionId)
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
@@ -575,7 +643,7 @@ async function runGeneration(
       )
     }
   }
-  const countPreviousTokens = async (text: string): Promise<number> => {
+  const countContextTokens = async (text: string): Promise<number> => {
     const result = await spindle.tokens.countText(text, {
       ...(selectedConnection.model ? { model: selectedConnection.model } : {}),
       userId,
@@ -590,7 +658,7 @@ async function runGeneration(
     installmentLabel,
     fandomNotesOverride,
     transformStoryMessages,
-    countPreviousTokens,
+    countContextTokens,
   )
   const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(unresolvedPrompt, {
     chatId,
@@ -775,7 +843,12 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       if (selection.messages.some((message) => latestUsed.has(message.id))) throw new Error('One or more selected messages were added to continuity while generation was running.')
       round.sequence = continuity.rounds.length + 1
       continuity.chatName = selection.chat.name; continuity.rounds.push(round); latest.chats[selection.chat.id] = continuity
-      pruneInactiveFeedVersions(continuity.rounds, latest.settings)
+      try {
+        await pruneFeedVersionsOutsideFandomWindow(continuity.rounds, latest.settings, userId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown token-counting error.'
+        spindle.log.warn(`[Threadverse] Could not prune old feed swipes: ${message}`)
+      }
       await saveStore(latest, userId)
     })
     await finishSuccessfulGeneration(

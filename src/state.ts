@@ -53,7 +53,9 @@ export const DEFAULT_SETTINGS: ThreadverseSettings = {
   previousContextMode: 'ranges',
   previousRangeLimit: null,
   previousContextTokenLimit: null,
+  fandomContinuityMode: 'threads',
   fandomThreadLimit: null,
+  fandomContinuityTokenLimit: null,
   maintainFandomContinuity: true,
   feedFontScale: DEFAULT_FEED_FONT_SCALE,
   instructionPresets: [{
@@ -76,13 +78,16 @@ export const DEFAULT_CONTINUITY = {
   previousRangeLimit: 3,
   previousContextTokenLimit: 8000,
   fandomThreadLimit: 3,
+  fandomContinuityTokenLimit: 8000,
 } as const
 
 export interface ResolvedContinuity {
   previousContextMode: 'ranges' | 'tokens'
   previousRangeLimit: number
   previousContextTokenLimit: number
+  fandomContinuityMode: 'threads' | 'tokens'
   fandomThreadLimit: number
+  fandomContinuityTokenLimit: number
 }
 
 export interface ResolvedSamplers {
@@ -104,7 +109,9 @@ export function resolveContinuity(settings: ThreadverseSettings): ResolvedContin
     previousContextMode: settings.previousContextMode,
     previousRangeLimit: settings.previousRangeLimit ?? DEFAULT_CONTINUITY.previousRangeLimit,
     previousContextTokenLimit: settings.previousContextTokenLimit ?? DEFAULT_CONTINUITY.previousContextTokenLimit,
+    fandomContinuityMode: settings.fandomContinuityMode,
     fandomThreadLimit: settings.fandomThreadLimit ?? DEFAULT_CONTINUITY.fandomThreadLimit,
+    fandomContinuityTokenLimit: settings.fandomContinuityTokenLimit ?? DEFAULT_CONTINUITY.fandomContinuityTokenLimit,
   }
 }
 
@@ -358,7 +365,9 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     previousContextMode: savedWithoutLegacyFields.previousContextMode === 'tokens' ? 'tokens' : 'ranges',
     previousRangeLimit: storedOptionalNumber(savedWithoutLegacyFields.previousRangeLimit, 0, 50, true),
     previousContextTokenLimit: storedOptionalNumber(savedWithoutLegacyFields.previousContextTokenLimit, 0, 2_000_000, true),
+    fandomContinuityMode: savedWithoutLegacyFields.fandomContinuityMode === 'tokens' ? 'tokens' : 'threads',
     fandomThreadLimit: storedOptionalNumber(savedWithoutLegacyFields.fandomThreadLimit, 0, 50, true),
+    fandomContinuityTokenLimit: storedOptionalNumber(savedWithoutLegacyFields.fandomContinuityTokenLimit, 0, 2_000_000, true),
     maintainFandomContinuity: typeof savedWithoutLegacyFields.maintainFandomContinuity === 'boolean'
       ? savedWithoutLegacyFields.maintainFandomContinuity
       : DEFAULT_SETTINGS.maintainFandomContinuity,
@@ -380,6 +389,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (mergedSettings.previousRangeLimit === DEFAULT_CONTINUITY.previousRangeLimit) mergedSettings.previousRangeLimit = null
   if (mergedSettings.previousContextTokenLimit === DEFAULT_CONTINUITY.previousContextTokenLimit) mergedSettings.previousContextTokenLimit = null
   if (mergedSettings.fandomThreadLimit === DEFAULT_CONTINUITY.fandomThreadLimit) mergedSettings.fandomThreadLimit = null
+  if (mergedSettings.fandomContinuityTokenLimit === DEFAULT_CONTINUITY.fandomContinuityTokenLimit) mergedSettings.fandomContinuityTokenLimit = null
 
   return {
     version: 1,
@@ -456,12 +466,22 @@ export function pruneInactiveFeedVersions(
   settings: ThreadverseSettings,
 ): number {
   if (!settings.maintainFandomContinuity) return 0
-  const limit = resolveContinuity(settings).fandomThreadLimit
+  const continuity = resolveContinuity(settings)
+  if (continuity.fandomContinuityMode !== 'threads') return 0
+  const limit = continuity.fandomThreadLimit
   if (limit <= 0) return 0
   const candidates = rounds.filter((round) => activeFeedVersion(round))
-  const expired = candidates.slice(0, Math.max(0, candidates.length - limit))
+  const retainedRoundIds = new Set(candidates.slice(-limit).map((round) => round.id))
+  return pruneInactiveFeedVersionsOutsideRounds(rounds, retainedRoundIds)
+}
+
+export function pruneInactiveFeedVersionsOutsideRounds(
+  rounds: StoredRound[],
+  retainedRoundIds: ReadonlySet<string>,
+): number {
   let removed = 0
-  for (const round of expired) {
+  for (const round of rounds) {
+    if (retainedRoundIds.has(round.id)) continue
     const active = activeFeedVersion(round)
     if (!active || round.feedVersions.length <= 1) continue
     removed += round.feedVersions.length - 1

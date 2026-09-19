@@ -19,6 +19,7 @@ The extension currently includes:
 - optional Max output tokens, Temperature, and Top P sampler overrides with visible defaults;
 - selectable Lumiverse prompt regexes applied as Outgoing only to copied story messages in Previous and Recent Context;
 - Previous Context limits selectable by saved range count or by a Lumiverse-tokenized message budget;
+- Fandom Continuity limits selectable by saved thread count or by a Lumiverse-tokenized budget that preserves whole threads;
 - persisted continuity limits and editable permanent instructions;
 - named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
@@ -30,7 +31,7 @@ The extension currently includes:
 - positional parent-index JSON for deterministic reply trees, with strict anti-flatness validation and legacy feed compatibility;
 - feed regeneration that adds a new version without duplicating its continuity round;
 - swipe-style regeneration history where the trailing right arrow creates a new version, with one active version per round and automatic legacy migration;
-- silent inactive-version pruning outside the configured fandom continuity window;
+- silent inactive-version pruning outside the configured fandom continuity window, including token-budget windows;
 - a mobile-first Reddit-inspired feed renderer with one round mounted at a time;
 - one-tap clean-text copying of the selected thread for TTS and other apps;
 - a mobile-safe Feed text-size slider with automatic persistence;

@@ -61,6 +61,27 @@ export async function selectPreviousContextByTokenBudget(
   return storyRangesFromSuffix(items, minimum)
 }
 
+export async function selectNewestLabeledBlocksByTokenBudget<
+  T extends { label: string; content: string },
+>(
+  items: T[],
+  tokenBudget: number,
+  countTokens: (text: string) => Promise<number>,
+): Promise<T[]> {
+  if (tokenBudget <= 0 || items.length === 0) return []
+
+  let minimum = 0
+  let maximum = items.length
+  while (minimum < maximum) {
+    const candidateCount = Math.ceil((minimum + maximum) / 2)
+    const candidate = items.slice(-candidateCount)
+    const tokens = await countTokens(renderBlocks(candidate))
+    if (tokens <= tokenBudget) minimum = candidateCount
+    else maximum = candidateCount - 1
+  }
+  return minimum === 0 ? [] : items.slice(-minimum)
+}
+
 export function groupConsecutiveStoryRanges(items: StoryRange[]): StoryRange[] {
   const grouped: StoryRange[] = []
   for (const item of items) {
