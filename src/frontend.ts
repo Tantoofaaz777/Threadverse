@@ -152,6 +152,12 @@ const STYLES = `
     line-height: 1.4;
   }
 
+  .threadverse-context-values {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+
   .threadverse-context-value.is-recent { color: var(--lumiverse-success, #22c55e); }
 
   .threadverse-context-error {
@@ -701,7 +707,10 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
           <div class="threadverse-context-row">
             <span class="threadverse-context-label">Recent context</span>
-            <span class="threadverse-context-value is-recent" data-recent-context>Select messages below</span>
+            <span class="threadverse-context-values">
+              <span class="threadverse-context-value is-recent" data-recent-context>Select messages below</span>
+              <span class="threadverse-context-value is-recent" data-full-prompt-tokens hidden></span>
+            </span>
           </div>
           <label class="threadverse-installment-field" data-installment-field hidden>
             <span class="threadverse-context-label">Title / episode / chapter</span>
@@ -860,6 +869,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const chatName = shell.querySelector<HTMLElement>('[data-chat-name]')!
   const previousContext = shell.querySelector<HTMLElement>('[data-previous-context]')!
   const recentContext = shell.querySelector<HTMLElement>('[data-recent-context]')!
+  const fullPromptTokens = shell.querySelector<HTMLElement>('[data-full-prompt-tokens]')!
   const installmentField = shell.querySelector<HTMLElement>('[data-installment-field]')!
   const contextError = shell.querySelector<HTMLElement>('[data-context-error]')!
   const savePromptButton = shell.querySelector<HTMLButtonElement>('[data-action="save-prompt"]')!
@@ -907,6 +917,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let recentContextTokenKey = ''
   let recentContextTokenCount: number | null = null
   let recentContextTokenApproximate = false
+  let fullPromptTokenCount: number | null = null
   let recentContextTokenPending = false
   let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
@@ -1051,7 +1062,10 @@ export function setup(ctx: SpindleFrontendContext) {
     disabled: true,
     ariaLabel: 'Title, episode, or chapter for the selected messages',
     className: 'threadverse-secondary-input',
-    onChange: (value) => { installmentDraft = value },
+    onChange: (value) => {
+      installmentDraft = value
+      updateSummary()
+    },
   })
 
   function clearInstallmentDraft(): void {
@@ -1109,6 +1123,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (!chat || fandomNotesDraftChatId !== chat.id) return
         fandomNotesDraft = notes
         scheduleFandomNotesSave(chat.id, chat.name, notes)
+        updateSummary()
       },
     })
   }
@@ -1423,6 +1438,7 @@ export function setup(ctx: SpindleFrontendContext) {
         if (!preset) return
         settingsDraft.activeInstructionPresetId = preset.id
         instructionsHandle?.update({ value: preset.instructions })
+        updateSummary()
       },
       triggerClassName: 'threadverse-secondary-input',
     })
@@ -1434,7 +1450,10 @@ export function setup(ctx: SpindleFrontendContext) {
       className: 'threadverse-secondary-input threadverse-expandable-textarea-input',
       onChange: (instructions) => {
         const preset = getActiveInstructionPreset()
-        if (preset) preset.instructions = instructions
+        if (preset) {
+          preset.instructions = instructions
+          updateSummary()
+        }
       },
     })
 
@@ -1485,6 +1504,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!settingsDraft) return
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
     autoSaveTimer = setTimeout(flushAutomaticSave, 350)
+    updateSummary()
   }
 
   function handleMaintainFandomChange(): void {
@@ -1614,6 +1634,7 @@ export function setup(ctx: SpindleFrontendContext) {
     recentContextTokenKey = ''
     recentContextTokenCount = null
     recentContextTokenApproximate = false
+    fullPromptTokenCount = null
     recentContextTokenPending = false
   }
 
@@ -1625,7 +1646,22 @@ export function setup(ctx: SpindleFrontendContext) {
 
     const text = selected.map((message) => message.content).join('\n\n')
     const connection = selectedConnection()
-    const key = `${activeChat?.id ?? ''}:${connection?.id ?? ''}:${selected.map((message) => message.id).join(',')}:${hashRecentContext(text)}`
+    const settingsHash = hashRecentContext(JSON.stringify(settingsDraft ?? {}))
+    const notes = fandomNotesDraftChatId === activeChat?.id ? fandomNotesDraft : ''
+    const continuityHash = hashRecentContext(JSON.stringify({
+      rounds: rounds.map((round) => round.id),
+      feeds: feeds.map((round) => [round.id, round.activeFeedVersionId]),
+    }))
+    const key = [
+      activeChat?.id ?? '',
+      connection?.id ?? '',
+      selected.map((message) => message.id).join(','),
+      hashRecentContext(text),
+      hashRecentContext(installmentDraft),
+      hashRecentContext(notes),
+      settingsHash,
+      continuityHash,
+    ].join(':')
     if (key === recentContextTokenKey) return
 
     if (recentContextTokenTimer) clearTimeout(recentContextTokenTimer)
@@ -1634,6 +1670,7 @@ export function setup(ctx: SpindleFrontendContext) {
     recentContextTokenKey = key
     recentContextTokenCount = null
     recentContextTokenApproximate = false
+    fullPromptTokenCount = null
     recentContextTokenPending = true
     const request = ++recentContextTokenRequest
     recentContextTokenTimer = setTimeout(() => {
@@ -1643,13 +1680,22 @@ export function setup(ctx: SpindleFrontendContext) {
         requestId: request,
         chatId: activeChat?.id ?? '',
         connectionId: connection?.id ?? null,
+        messageIds: selected.map((message) => message.id),
         text,
+        installmentLabel: installmentDraft,
+        fandomNotes: notes,
+        settings: settingsDraft ? {
+          ...settingsDraft,
+          outgoingRegexScriptIds: [...settingsDraft.outgoingRegexScriptIds],
+          instructionPresets: settingsDraft.instructionPresets.map((preset) => ({ ...preset })),
+        } : null,
       })
       recentContextTokenFallbackTimer = setTimeout(() => {
         recentContextTokenFallbackTimer = null
         if (request !== recentContextTokenRequest || key !== recentContextTokenKey || !shell.isConnected) return
         recentContextTokenCount = Math.ceil(text.length / 4)
         recentContextTokenApproximate = true
+        fullPromptTokenCount = null
         recentContextTokenPending = false
         updateSummary()
       }, 5000)
@@ -1663,17 +1709,22 @@ export function setup(ctx: SpindleFrontendContext) {
     installmentLabelHandle?.update({ disabled: selected.length === 0 || operationPending || generationPending })
     if (selected.length === 0) {
       recentContext.textContent = 'Select messages below'
+      fullPromptTokens.textContent = ''
+      fullPromptTokens.hidden = true
       saveButton.disabled = true
       return
     }
 
-    const indexLabel = selected.length <= 5
-      ? selected.map((message) => `#${message.index}`).join(', ')
-      : `#${selected[0].index}…#${selected.at(-1)!.index}`
     const tokenLabel = recentContextTokenCount !== null
       ? ` · ${recentContextTokenApproximate ? '~' : ''}${recentContextTokenCount.toLocaleString('en-US')} token${recentContextTokenCount === 1 ? '' : 's'}`
       : recentContextTokenPending ? ' · counting tokens…' : ''
-    recentContext.textContent = `${indexLabel} · ${selected.length} message${selected.length === 1 ? '' : 's'} selected${tokenLabel}`
+    recentContext.textContent = `${selected.length} message${selected.length === 1 ? '' : 's'} selected${tokenLabel}`
+    fullPromptTokens.hidden = false
+    fullPromptTokens.textContent = fullPromptTokenCount !== null
+      ? `Full prompt · ~${fullPromptTokenCount.toLocaleString('en-US')} token${fullPromptTokenCount === 1 ? '' : 's'}`
+      : recentContextTokenPending
+        ? 'Full prompt · counting tokens…'
+        : 'Full prompt · unavailable'
     saveButton.disabled = operationPending || generationPending || !activeChat
   }
 
@@ -2426,8 +2477,9 @@ export function setup(ctx: SpindleFrontendContext) {
       ) return
       if (recentContextTokenFallbackTimer) clearTimeout(recentContextTokenFallbackTimer)
       recentContextTokenFallbackTimer = null
-      recentContextTokenCount = message.totalTokens
-      recentContextTokenApproximate = message.approximate
+      recentContextTokenCount = message.recentTokens
+      recentContextTokenApproximate = message.recentApproximate
+      fullPromptTokenCount = message.fullPromptTokens
       recentContextTokenPending = false
       updateSummary()
       return
@@ -2557,6 +2609,7 @@ export function setup(ctx: SpindleFrontendContext) {
           preset.instructions = message.text
           if (preset.id === settingsDraft.activeInstructionPresetId) {
             instructionsHandle?.update({ value: message.text })
+            updateSummary()
           }
         }
       }
@@ -2576,6 +2629,7 @@ export function setup(ctx: SpindleFrontendContext) {
         fandomNotesDraftChatId = message.chatId
         fandomNotesDraft = message.text
         fandomNotesHandle?.update({ value: message.text })
+        updateSummary()
       }
       return
     }

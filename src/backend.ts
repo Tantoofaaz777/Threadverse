@@ -470,7 +470,7 @@ async function promptForRound(
   fandomNotesOverride?: string,
   transformStoryMessages: (messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]> = async (messages) => messages,
   countContextTokens?: (text: string) => Promise<number>,
-): Promise<string> {
+): Promise<{ text: string; recentContent: string }> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
   const previous = limits.previousContextMode === 'tokens'
@@ -531,13 +531,16 @@ async function promptForRound(
       countContextTokens,
     )
   }
-  return buildThreadversePrompt({
-    previousRanges,
-    recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
-    fandomContinuity: fandom,
-    fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
-    instructions: preset.instructions,
-  })
+  return {
+    text: buildThreadversePrompt({
+      previousRanges,
+      recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
+      fandomContinuity: fandom,
+      fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
+      instructions: preset.instructions,
+    }),
+    recentContent,
+  }
 }
 
 async function pruneFeedVersionsOutsideFandomWindow(
@@ -579,6 +582,63 @@ async function pruneFeedVersionsOutsideFandomWindow(
   )
 }
 
+async function createStoryMessageTransformer(
+  store: ThreadverseStore,
+  chatId: string,
+  recent: ChatMessageSummary[],
+  userId: string,
+  commitMacros: boolean,
+  assertCurrent: () => void = () => undefined,
+): Promise<(messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]>> {
+  if (store.settings.outgoingRegexScriptIds.length === 0) {
+    return async (messages) => messages
+  }
+  if (!spindle.permissions.has('regex_scripts')) {
+    throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
+  }
+
+  const [chat, rawChatMessages] = await Promise.all([
+    spindle.chats.get(chatId, userId),
+    spindle.chat.getMessages(chatId),
+  ])
+  const availableScripts = await getOutgoingRegexScripts(chat, userId)
+  assertCurrent()
+  const selectedIds = new Set(store.settings.outgoingRegexScriptIds)
+  const selectedScripts = availableScripts.filter((script) => selectedIds.has(script.id))
+  if (selectedScripts.length === 0) return async (messages) => messages
+
+  const maxMessageIndex = rawChatMessages.reduce(
+    (maximum, message) => Math.max(maximum, message.index_in_chat + 1),
+    recent.reduce((maximum, message) => Math.max(maximum, message.index), 0),
+  )
+  const reportedWarnings = new Set<string>()
+  const resolveRegexMacros = async (template: string): Promise<string> => {
+    const { text, diagnostics } = await spindle.macros.resolve(template, {
+      chatId,
+      userId,
+      commit: commitMacros,
+    })
+    for (const diagnostic of diagnostics) {
+      const warning = `Regex macro resolution: ${diagnostic.message}`
+      if (reportedWarnings.has(warning)) continue
+      reportedWarnings.add(warning)
+      spindle.log.warn(`[Threadverse] ${warning}`)
+    }
+    return text
+  }
+  return async (messages) => applyOutgoingRegexToMessages(
+    messages,
+    selectedScripts,
+    maxMessageIndex,
+    resolveRegexMacros,
+    (warning) => {
+      if (reportedWarnings.has(warning)) return
+      reportedWarnings.add(warning)
+      spindle.log.warn(`[Threadverse] ${warning}`)
+    },
+  )
+}
+
 async function runGeneration(
   store: ThreadverseStore,
   chatId: string,
@@ -597,52 +657,14 @@ async function runGeneration(
   if (!selectedConnection) throw new Error('Choose a Lumiverse connection in Settings before generating.')
   const connectionId = selectedConnection.id
   const samplers = resolveSamplers(store.settings)
-  let transformStoryMessages = async (messages: ChatMessageSummary[]) => messages
-  if (store.settings.outgoingRegexScriptIds.length > 0) {
-    if (!spindle.permissions.has('regex_scripts')) {
-      throw new Error('Grant the Regex Scripts permission before using outgoing regexes.')
-    }
-    const [chat, rawChatMessages] = await Promise.all([
-      spindle.chats.get(chatId, userId),
-      spindle.chat.getMessages(chatId),
-    ])
-    const availableScripts = await getOutgoingRegexScripts(chat, userId)
-    throwIfAborted(active)
-    const selectedIds = new Set(store.settings.outgoingRegexScriptIds)
-    const selectedScripts = availableScripts.filter((script) => selectedIds.has(script.id))
-    if (selectedScripts.length > 0) {
-      const maxMessageIndex = rawChatMessages.reduce(
-        (maximum, message) => Math.max(maximum, message.index_in_chat + 1),
-        recent.reduce((maximum, message) => Math.max(maximum, message.index), 0),
-      )
-      const reportedWarnings = new Set<string>()
-      const resolveRegexMacros = async (template: string): Promise<string> => {
-        const { text, diagnostics } = await spindle.macros.resolve(template, {
-          chatId,
-          userId,
-          commit: true,
-        })
-        for (const diagnostic of diagnostics) {
-          const warning = `Regex macro resolution: ${diagnostic.message}`
-          if (reportedWarnings.has(warning)) continue
-          reportedWarnings.add(warning)
-          spindle.log.warn(`[Threadverse] ${warning}`)
-        }
-        return text
-      }
-      transformStoryMessages = async (messages) => applyOutgoingRegexToMessages(
-        messages,
-        selectedScripts,
-        maxMessageIndex,
-        resolveRegexMacros,
-        (warning) => {
-          if (reportedWarnings.has(warning)) return
-          reportedWarnings.add(warning)
-          spindle.log.warn(`[Threadverse] ${warning}`)
-        },
-      )
-    }
-  }
+  const transformStoryMessages = await createStoryMessageTransformer(
+    store,
+    chatId,
+    recent,
+    userId,
+    true,
+    () => throwIfAborted(active),
+  )
   const countContextTokens = async (text: string): Promise<number> => {
     const result = await spindle.tokens.countText(text, {
       ...(selectedConnection.model ? { model: selectedConnection.model } : {}),
@@ -650,7 +672,7 @@ async function runGeneration(
     })
     return result.total_tokens
   }
-  const unresolvedPrompt = await promptForRound(
+  const preparedPrompt = await promptForRound(
     store,
     chatId,
     recent,
@@ -660,7 +682,7 @@ async function runGeneration(
     transformStoryMessages,
     countContextTokens,
   )
-  const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(unresolvedPrompt, {
+  const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(preparedPrompt.text, {
     chatId,
     userId,
     commit: true,
@@ -1018,38 +1040,84 @@ async function countRecentContextTokens(
   if (typeof payload.chatId !== 'string' || typeof payload.text !== 'string') return
   if (payload.text.length > 2_000_000) return
 
-  const fallback = {
-    total_tokens: Math.ceil(payload.text.length / 4),
-    approximate: true,
-  }
-  let result: { total_tokens: number; approximate: boolean } = fallback
+  const recentFallback = Math.ceil(payload.text.length / 4)
   try {
+    const selection = await selectMessages(payload.chatId, payload.messageIds, userId)
+    const stored = await loadStore(userId)
+    const previewStore = payload.settings
+      ? normalizeStore({ version: 1, settings: payload.settings, chats: stored.chats })
+      : stored
     const connections = await getConnections(userId)
     const connection = selectConnection(connections, payload.connectionId)
-    result = await new Promise((resolve) => {
-      let settled = false
-      const finish = (value: { total_tokens: number; approximate: boolean }) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        resolve(value)
-      }
-      const timer = setTimeout(() => finish(fallback), 3000)
-      void spindle.tokens.countText(payload.text, {
-        ...(connection?.model ? { model: connection.model } : {}),
-        userId,
-      }).then(finish).catch(() => finish(fallback))
-    })
-  } catch {
-    result = fallback
+    let nativeUnavailable = false
+    const countText = async (text: string): Promise<{ total_tokens: number; approximate: boolean }> => {
+      const fallback = { total_tokens: Math.ceil(text.length / 4), approximate: true }
+      if (nativeUnavailable) return fallback
+      const result = await new Promise<{ total_tokens: number; approximate: boolean }>((resolve) => {
+        let settled = false
+        const finish = (
+          value: { total_tokens: number; approximate: boolean },
+          unavailable = false,
+        ) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (unavailable) nativeUnavailable = true
+          resolve(value)
+        }
+        const timer = setTimeout(() => finish(fallback, true), 2000)
+        void spindle.tokens.countText(text, {
+          ...(connection?.model ? { model: connection.model } : {}),
+          userId,
+        }).then((value) => finish(value)).catch(() => finish(fallback, true))
+      })
+      return result
+    }
+    const transformStoryMessages = await createStoryMessageTransformer(
+      previewStore,
+      payload.chatId,
+      selection.messages,
+      userId,
+      false,
+    )
+    const prepared = await promptForRound(
+      previewStore,
+      payload.chatId,
+      selection.messages,
+      previewStore.chats[payload.chatId]?.rounds.length ?? 0,
+      typeof payload.installmentLabel === 'string' ? payload.installmentLabel.trim() : '',
+      typeof payload.fandomNotes === 'string' ? payload.fandomNotes : undefined,
+      transformStoryMessages,
+      async (text) => (await countText(text)).total_tokens,
+    )
+    const [resolvedRecent, resolvedPrompt] = await Promise.all([
+      spindle.macros.resolve(prepared.recentContent, { chatId: payload.chatId, userId, commit: false }),
+      spindle.macros.resolve(prepared.text, { chatId: payload.chatId, userId, commit: false }),
+    ])
+    const [recentResult, fullResult] = await Promise.all([
+      countText(resolvedRecent.text),
+      countText(resolvedPrompt.text),
+    ])
+    send({
+      type: 'threadverse:recent_context_tokens',
+      requestId: payload.requestId,
+      chatId: payload.chatId,
+      recentTokens: recentResult.total_tokens,
+      recentApproximate: recentResult.approximate,
+      fullPromptTokens: fullResult.total_tokens,
+    }, userId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown prompt preview error.'
+    spindle.log.warn(`[Threadverse] Could not build the full prompt token preview: ${message}`)
+    send({
+      type: 'threadverse:recent_context_tokens',
+      requestId: payload.requestId,
+      chatId: payload.chatId,
+      recentTokens: recentFallback,
+      recentApproximate: true,
+      fullPromptTokens: null,
+    }, userId)
   }
-  send({
-    type: 'threadverse:recent_context_tokens',
-    requestId: payload.requestId,
-    chatId: payload.chatId,
-    totalTokens: result.total_tokens,
-    approximate: result.approximate,
-  }, userId)
 }
 
 spindle.onFrontendMessage(async (payload: unknown, userId: string) => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.12.0
+
+- Replace selected message indexes in the Make summary with a cleaner selected-message count and Recent Context token count.
+- Add a second-line full-prompt estimate covering Previous Context, post-regex Recent Context, Fandom Continuity, Fandom Notes, the active instruction draft, and Output Format.
+- Recalculate the preview when selection, installment label, notes, prompt settings, connection, continuity window, or active feed version changes.
+- Reuse the generation prompt pipeline with non-committing macro resolution and retain bounded tokenizer fallbacks so the preview cannot remain stuck.
+
 ## 1.11.0
 
 - Format prompt sections as Markdown `#` headings and episode, chapter, or round labels as nested `##` headings.

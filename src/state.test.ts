@@ -69,7 +69,11 @@ describe('Threadverse continuity', () => {
       requestId: 1,
       chatId: 'chat',
       connectionId: 'connection',
+      messageIds: ['m1'],
       text: 'Selected context',
+      installmentLabel: 'S01E01',
+      fandomNotes: '',
+      settings: null,
     })).toBe(true)
     expect(isFrontendMessage({
       type: 'threadverse:save_fandom_notes', chatId: 'chat', chatName: 'RP', notes: 'Remember this.',

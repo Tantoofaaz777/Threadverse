@@ -120,7 +120,11 @@ export type FrontendToBackendMessage =
       requestId: number
       chatId: string
       connectionId: string | null
+      messageIds: string[]
       text: string
+      installmentLabel: string
+      fandomNotes: string
+      settings: ThreadverseSettingsPayload | null
     }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
   | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
@@ -171,8 +175,9 @@ export type BackendToFrontendMessage =
       type: 'threadverse:recent_context_tokens'
       requestId: number
       chatId: string
-      totalTokens: number
-      approximate: boolean
+      recentTokens: number
+      recentApproximate: boolean
+      fullPromptTokens: number | null
     }
   | {
       type: 'threadverse:mutation_completed'
