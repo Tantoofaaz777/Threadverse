@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.11.0
+
+- Format prompt sections as Markdown `#` headings and episode, chapter, or round labels as nested `##` headings.
+- Remove redundant standalone separators between chronological context blocks.
+- Omit empty Previous Context and Fandom Continuity sections while keeping Recent Context, Instructions, and Output Format explicit.
+
 ## 1.10.2
 
 - Move live Recent Context token counting from the browser API to the extension backend for reliable completion.

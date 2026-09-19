@@ -25,7 +25,7 @@ The extension currently includes:
 - named, renameable instruction presets with the native expanded Lumiverse text editor;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
 - automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
-- a prompt builder that groups consecutive story ranges by installment label before fandom continuity, optional fandom notes, and instructions;
+- a compact Markdown prompt builder with top-level sections, nested installment headings, omitted empty continuity sections, optional fandom notes, and grouped consecutive story ranges;
 - generation through the selected Lumiverse connection;
 - isolated overrides for Max output tokens, Temperature, and Top P while all other connection settings remain inherited;
 - immediately cancellable streamed generation with separate live estimates for output and reasoning tokens plus atomic round persistence;

@@ -537,9 +537,9 @@ describe('Threadverse continuity', () => {
       instructions: 'Discuss it.',
     })
     expect(prompt).toContain(
-      '--- ZETA — S01E03 ---\nScene A\n\nScene B\n\n---\n\n--- ZETA — S01E04 ---\nScene C',
+      '## ZETA — S01E03\nScene A\n\nScene B\n\n## ZETA — S01E04\nScene C',
     )
-    expect(prompt).toContain('>>> RECENT CONTEXT <<<\n\n--- ZETA — S01E05 ---\nCurrent scene')
+    expect(prompt).toContain('# RECENT CONTEXT\n\n## ZETA — S01E05\nCurrent scene')
   })
 
   test('keeps the newest whole messages within the Previous Context token budget', async () => {
@@ -593,7 +593,10 @@ describe('Threadverse continuity', () => {
       instructions: 'Discuss the story.',
     })
 
-    expect(prompt).not.toContain('>>> FANDOM NOTES <<<')
+    expect(prompt).not.toContain('# PREVIOUS CONTEXT')
+    expect(prompt).not.toContain('# FANDOM CONTINUITY')
+    expect(prompt).not.toContain('# FANDOM NOTES')
+    expect(prompt).toContain('# RECENT CONTEXT')
   })
 
   test('asks the model for separate verbose conversation groups', () => {
@@ -603,7 +606,7 @@ describe('Threadverse continuity', () => {
       fandomContinuity: [],
       instructions: 'Discuss the story.',
     })
-    const outputFormat = prompt.slice(prompt.indexOf('>>> OUTPUT FORMAT <<<'))
+    const outputFormat = prompt.slice(prompt.indexOf('# OUTPUT FORMAT'))
 
     expect(outputFormat).toContain('"title"')
     expect(outputFormat).toContain('"username"')

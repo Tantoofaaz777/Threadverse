@@ -25,8 +25,8 @@ export function renderBlocks<T extends { label: string; content: string }>(items
   if (items.length === 0) return ''
 
   return items
-    .map((item) => `--- ${item.label} ---\n${item.content.trim()}`)
-    .join('\n\n---\n\n')
+    .map((item) => `## ${item.label}\n${item.content.trim()}`)
+    .join('\n\n')
 }
 
 function storyRangesFromSuffix(items: StoryMessageRange[], messageCount: number): StoryRange[] {
@@ -102,16 +102,18 @@ export function installmentOrRoundLabel(installmentLabel: string, sequence: numb
 export function buildThreadversePrompt(input: ThreadversePromptInput): string {
   const fandomNotes = input.fandomNotes?.trim() ?? ''
   return [
-    '>>> PREVIOUS CONTEXT <<<',
-    renderBlocks(input.previousRanges),
-    '>>> RECENT CONTEXT <<<',
+    ...(input.previousRanges.length > 0
+      ? ['# PREVIOUS CONTEXT', renderBlocks(input.previousRanges)]
+      : []),
+    '# RECENT CONTEXT',
     renderBlocks([input.recentRange]),
-    '>>> FANDOM CONTINUITY <<<',
-    renderBlocks(input.fandomContinuity),
-    ...(fandomNotes ? ['>>> FANDOM NOTES <<<', fandomNotes] : []),
-    '>>> INSTRUCTIONS <<<',
+    ...(input.fandomContinuity.length > 0
+      ? ['# FANDOM CONTINUITY', renderBlocks(input.fandomContinuity)]
+      : []),
+    ...(fandomNotes ? ['# FANDOM NOTES', fandomNotes] : []),
+    '# INSTRUCTIONS',
     input.instructions.trim(),
-    '>>> OUTPUT FORMAT <<<',
+    '# OUTPUT FORMAT',
     `You must respond with ONLY valid JSON in this exact format:
 {
   "title": "thread title",
