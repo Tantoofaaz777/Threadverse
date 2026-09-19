@@ -901,6 +901,12 @@ export function setup(ctx: SpindleFrontendContext) {
   let fandomNotesSaveTimer: ReturnType<typeof setTimeout> | null = null
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let generationStartTimer: ReturnType<typeof setTimeout> | null = null
+  let recentContextTokenTimer: ReturnType<typeof setTimeout> | null = null
+  let recentContextTokenRequest = 0
+  let recentContextTokenKey = ''
+  let recentContextTokenCount: number | null = null
+  let recentContextTokenApproximate = false
+  let recentContextTokenPending = false
   let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
   let settingsConnections: ConnectionSummary[] = []
@@ -1191,6 +1197,7 @@ export function setup(ctx: SpindleFrontendContext) {
     settingsConnections = connections
     settingsRegexScripts = regexScripts
     settingsRegexScriptsPermissionGranted = regexScriptsPermissionGranted
+    updateSummary()
     const connectionHandle = ctx.components.mountSelect(settingTarget('connection'), {
       value: settingsDraft.connectionId ?? '',
       placeholder: connections.length === 0 ? 'No connections available' : 'Choose a connection',
@@ -1208,6 +1215,7 @@ export function setup(ctx: SpindleFrontendContext) {
         const connection = connections.find((candidate) => candidate.id === connectionId)
         settingsDraft.connectionId = connection?.id ?? null
         scheduleAutomaticSave()
+        updateSummary()
       },
     })
 
@@ -1580,8 +1588,74 @@ export function setup(ctx: SpindleFrontendContext) {
     return messages.filter((message) => selectedMessageIds.has(message.id))
   }
 
+  function hashRecentContext(value: string): string {
+    let hash = 2166136261
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+    return (hash >>> 0).toString(36)
+  }
+
+  function selectedConnectionModel(): string {
+    const connection = settingsConnections.find((item) => item.id === settingsDraft?.connectionId)
+      ?? settingsConnections.find((item) => item.isDefault)
+      ?? settingsConnections[0]
+    return connection?.model ?? ''
+  }
+
+  function resetRecentContextTokenCount(): void {
+    if (recentContextTokenTimer) clearTimeout(recentContextTokenTimer)
+    recentContextTokenTimer = null
+    recentContextTokenRequest += 1
+    recentContextTokenKey = ''
+    recentContextTokenCount = null
+    recentContextTokenApproximate = false
+    recentContextTokenPending = false
+  }
+
+  function scheduleRecentContextTokenCount(selected: ChatMessageSummary[]): void {
+    if (selected.length === 0) {
+      resetRecentContextTokenCount()
+      return
+    }
+
+    const text = selected.map((message) => message.content).join('\n\n')
+    const model = selectedConnectionModel()
+    const key = `${activeChat?.id ?? ''}:${model}:${selected.map((message) => message.id).join(',')}:${hashRecentContext(text)}`
+    if (key === recentContextTokenKey) return
+
+    if (recentContextTokenTimer) clearTimeout(recentContextTokenTimer)
+    recentContextTokenKey = key
+    recentContextTokenCount = null
+    recentContextTokenApproximate = false
+    recentContextTokenPending = true
+    const request = ++recentContextTokenRequest
+    recentContextTokenTimer = setTimeout(async () => {
+      recentContextTokenTimer = null
+      try {
+        const result = ctx.tokens
+          ? await ctx.tokens.countText(text, model ? { model } : undefined)
+          : { total_tokens: Math.ceil(text.length / 4), approximate: true }
+        if (request !== recentContextTokenRequest || key !== recentContextTokenKey || !shell.isConnected) return
+        recentContextTokenCount = result.total_tokens
+        recentContextTokenApproximate = result.approximate
+      } catch {
+        if (request !== recentContextTokenRequest || key !== recentContextTokenKey || !shell.isConnected) return
+        recentContextTokenCount = null
+        recentContextTokenApproximate = false
+      } finally {
+        if (request === recentContextTokenRequest && key === recentContextTokenKey && shell.isConnected) {
+          recentContextTokenPending = false
+          updateSummary()
+        }
+      }
+    }, 180)
+  }
+
   function updateSummary(): void {
     const selected = selectedMessages()
+    scheduleRecentContextTokenCount(selected)
     installmentField.hidden = selected.length === 0
     installmentLabelHandle?.update({ disabled: selected.length === 0 || operationPending || generationPending })
     if (selected.length === 0) {
@@ -1593,7 +1667,10 @@ export function setup(ctx: SpindleFrontendContext) {
     const indexLabel = selected.length <= 5
       ? selected.map((message) => `#${message.index}`).join(', ')
       : `#${selected[0].index}…#${selected.at(-1)!.index}`
-    recentContext.textContent = `${indexLabel} · ${selected.length} message${selected.length === 1 ? '' : 's'} selected`
+    const tokenLabel = recentContextTokenCount !== null
+      ? ` · ${recentContextTokenApproximate ? '~' : ''}${recentContextTokenCount.toLocaleString('en-US')} token${recentContextTokenCount === 1 ? '' : 's'}`
+      : recentContextTokenPending ? ' · counting tokens…' : ''
+    recentContext.textContent = `${indexLabel} · ${selected.length} message${selected.length === 1 ? '' : 's'} selected${tokenLabel}`
     saveButton.disabled = operationPending || generationPending || !activeChat
   }
 
@@ -2555,6 +2632,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (autoSaveTimer) flushAutomaticSave()
     if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)
+    resetRecentContextTokenCount()
     clearGenerationStartTimer()
     clearLongPress()
     unsubscribeActivate()

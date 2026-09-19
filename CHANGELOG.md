@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.1
+
+- Show a live token count after the selected-message count in Recent Context.
+- Use the selected connection model's native Lumiverse tokenizer, debounce rapid selection changes, and ignore stale asynchronous results.
+- Mark the local fallback estimate with `~` when the host token API is unavailable.
+
 ## 1.10.0
 
 - Add a choice between thread count and token budget for Fandom Continuity.
