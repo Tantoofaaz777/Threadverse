@@ -79,6 +79,12 @@ describe('Threadverse continuity', () => {
       type: 'threadverse:save_fandom_notes', chatId: 'chat', chatName: 'RP', notes: 'Remember this.',
     })).toBe(true)
     expect(isFrontendMessage({
+      type: 'threadverse:set_chat_instruction_preset',
+      chatId: 'chat',
+      chatName: 'RP',
+      presetId: 'preset',
+    })).toBe(true)
+    expect(isFrontendMessage({
       type: 'threadverse:open_fandom_notes_editor', chatId: 'chat', chatName: 'RP', value: 'Notes',
     })).toBe(true)
     expect(isFrontendMessage({
@@ -345,6 +351,74 @@ describe('Threadverse continuity', () => {
       new Set(['round-2', 'round-4']),
     )).toBe(2)
     expect(tokenWindow.chats.chat.rounds.map((round) => round.feedVersions.length)).toEqual([1, 2, 1, 2])
+  })
+
+  test('preserves a chat-only preset choice and discards missing preset references', () => {
+    const store = normalizeStore({
+      version: 1,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        instructionPresets: [
+          ...DEFAULT_SETTINGS.instructionPresets,
+          { id: 'discussion', name: 'Discussion', instructions: 'Discuss the story.' },
+        ],
+        activeInstructionPresetId: 'default',
+      },
+      chats: {
+        selected: {
+          chatName: 'Selected preset',
+          fandomNotes: '',
+          instructionPresetId: 'discussion',
+          rounds: [],
+        },
+        missing: {
+          chatName: 'Missing preset',
+          fandomNotes: '',
+          instructionPresetId: 'deleted-preset',
+          rounds: [],
+        },
+      },
+    })
+
+    expect(store.chats.selected).toEqual({
+      chatId: 'selected',
+      chatName: 'Selected preset',
+      fandomNotes: '',
+      instructionPresetId: 'discussion',
+      rounds: [],
+    })
+    expect(store.chats.missing).toBeUndefined()
+  })
+
+  test('resetting continuity preserves the selected instruction preset', () => {
+    const store = normalizeStore({
+      version: 1,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        instructionPresets: [
+          ...DEFAULT_SETTINGS.instructionPresets,
+          { id: 'discussion', name: 'Discussion', instructions: 'Discuss the story.' },
+        ],
+      },
+      chats: {
+        chat: {
+          chatName: 'Original name',
+          fandomNotes: '',
+          instructionPresetId: 'discussion',
+          rounds: [{ messages: [storedMessage('m1', 1)] }],
+        },
+      },
+    })
+
+    resetContinuityRounds(store, 'chat', 'Current name')
+
+    expect(store.chats.chat).toEqual({
+      chatId: 'chat',
+      chatName: 'Current name',
+      fandomNotes: '',
+      instructionPresetId: 'discussion',
+      rounds: [],
+    })
   })
 
   test('rekeys recovered chats and repairs duplicate round IDs', () => {

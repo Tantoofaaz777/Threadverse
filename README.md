@@ -23,7 +23,7 @@ The extension currently includes:
 - Previous Context limits selectable by saved range count or by a Lumiverse-tokenized message budget;
 - Fandom Continuity limits selectable by saved thread count or by a Lumiverse-tokenized budget that preserves whole threads;
 - persisted continuity limits and editable permanent instructions;
-- named, renameable instruction presets with the native expanded Lumiverse text editor;
+- named, renameable instruction presets with the native expanded Lumiverse text editor and a remembered selection for each chat;
 - per-chat Fandom Notes with automatic persistence, the native expanded editor, and no added prompt description;
 - automatic persistence for connection, samplers, and continuity while prompt edits remain explicit;
 - a compact Markdown prompt builder with top-level sections, nested installment headings, omitted empty continuity sections, optional fandom notes, and grouped consecutive story ranges;

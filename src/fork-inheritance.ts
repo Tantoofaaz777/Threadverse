@@ -134,6 +134,9 @@ export function inheritContinuityForFork(input: ForkInheritanceInput): ForkInher
       chatName: input.forkChatName || input.existing?.chatName || 'Untitled chat',
       fandomNotes: input.existing?.fandomNotes ?? input.source?.fandomNotes ?? '',
       rounds,
+      ...(input.existing?.instructionPresetId ?? input.source?.instructionPresetId
+        ? { instructionPresetId: input.existing?.instructionPresetId ?? input.source?.instructionPresetId }
+        : {}),
       forkSourceChatId: input.sourceChatId,
       forkedAtMessageIndex: input.forkedAtMessageIndex,
     },

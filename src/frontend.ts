@@ -944,6 +944,9 @@ export function setup(ctx: SpindleFrontendContext) {
   let recentContextTokenPending = false
   let latestChatRequestId = 0
   let settingsDraft: ThreadverseSettingsPayload | null = null
+  let activeChatInstructionPresetId: string | null = null
+  let savedInstructionPresetIds = new Set<string>()
+  const pendingChatInstructionPresets = new Map<string, string>()
   let settingsConnections: ConnectionSummary[] = []
   let settingsRegexScripts: RegexScriptSummary[] = []
   let settingsRegexScriptsPermissionGranted = false
@@ -1165,6 +1168,16 @@ export function setup(ctx: SpindleFrontendContext) {
     ) ?? null
   }
 
+  function syncInstructionPresetSelection(presetId: string | null): void {
+    if (!settingsDraft || !presetId) return
+    const preset = settingsDraft.instructionPresets.find((candidate) => candidate.id === presetId)
+    if (!preset) return
+    settingsDraft.activeInstructionPresetId = preset.id
+    instructionPresetHandle?.update({ value: preset.id })
+    instructionsHandle?.update({ value: preset.instructions })
+    updateSummary()
+  }
+
   function applyFeedFontScale(value: number): void {
     feedList.style.setProperty('--threadverse-feed-font-scale', String(value / 100))
   }
@@ -1286,6 +1299,10 @@ export function setup(ctx: SpindleFrontendContext) {
       outgoingRegexScriptIds: [...settings.outgoingRegexScriptIds],
       instructionPresets: settings.instructionPresets.map((preset) => ({ ...preset })),
     }
+    if (
+      activeChatInstructionPresetId
+      && settingsDraft.instructionPresets.some((preset) => preset.id === activeChatInstructionPresetId)
+    ) settingsDraft.activeInstructionPresetId = activeChatInstructionPresetId
     settingsConnections = connections
     settingsRegexScripts = regexScripts
     settingsRegexScriptsPermissionGranted = regexScriptsPermissionGranted
@@ -1507,7 +1524,17 @@ export function setup(ctx: SpindleFrontendContext) {
         const preset = settingsDraft.instructionPresets.find((candidate) => candidate.id === presetId)
         if (!preset) return
         settingsDraft.activeInstructionPresetId = preset.id
+        activeChatInstructionPresetId = preset.id
         instructionsHandle?.update({ value: preset.instructions })
+        if (activeChat && savedInstructionPresetIds.has(preset.id)) {
+          pendingChatInstructionPresets.set(activeChat.id, preset.id)
+          send({
+            type: 'threadverse:set_chat_instruction_preset',
+            chatId: activeChat.id,
+            chatName: activeChat.name,
+            presetId: preset.id,
+          })
+        }
         updateSummary()
       },
     })
@@ -1595,6 +1622,7 @@ export function setup(ctx: SpindleFrontendContext) {
         instructionPresets: settingsDraft.instructionPresets.map((preset) => ({ ...preset })),
         activeInstructionPresetId: settingsDraft.activeInstructionPresetId,
       },
+      ...(activeChat ? { chat: { id: activeChat.id, name: activeChat.name } } : {}),
     })
   }
 
@@ -1636,6 +1664,7 @@ export function setup(ctx: SpindleFrontendContext) {
       (preset) => preset.id !== activePreset.id,
     )
     settingsDraft.activeInstructionPresetId = settingsDraft.instructionPresets[0].id
+    activeChatInstructionPresetId = settingsDraft.activeInstructionPresetId
     mountSettingsForm(
       settingsDraft,
       settingsConnections,
@@ -2281,6 +2310,10 @@ export function setup(ctx: SpindleFrontendContext) {
       messageIds: selected.map((message) => message.id),
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
       installmentLabel: installmentDraft,
+      instructionPresetId: settingsDraft
+        && savedInstructionPresetIds.has(settingsDraft.activeInstructionPresetId)
+        ? settingsDraft.activeInstructionPresetId
+        : undefined,
     })
   }
 
@@ -2296,6 +2329,10 @@ export function setup(ctx: SpindleFrontendContext) {
       chatId: activeChat.id,
       roundId,
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
+      instructionPresetId: settingsDraft
+        && savedInstructionPresetIds.has(settingsDraft.activeInstructionPresetId)
+        ? settingsDraft.activeInstructionPresetId
+        : undefined,
     })
   }
 
@@ -2594,6 +2631,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
     if (message.type === 'threadverse:settings_state') {
       defaultInstructions = message.defaultInstructions
+      savedInstructionPresetIds = new Set(message.settings.instructionPresets.map((preset) => preset.id))
       mountSettingsForm(
         message.settings,
         message.connections,
@@ -2607,7 +2645,19 @@ export function setup(ctx: SpindleFrontendContext) {
       if (message.scope === 'prompt') {
         promptSavePending = false
         savePromptButton.disabled = false
+        if (!message.error && settingsDraft) {
+          savedInstructionPresetIds = new Set(settingsDraft.instructionPresets.map((preset) => preset.id))
+        }
       }
+      return
+    }
+
+    if (message.type === 'threadverse:chat_instruction_preset_save_result') {
+      if (pendingChatInstructionPresets.get(message.chatId) !== message.presetId) return
+      if (message.error) {
+        pendingChatInstructionPresets.delete(message.chatId)
+      }
+      if (activeChat?.id === message.chatId) requestActiveChat()
       return
     }
 
@@ -2644,6 +2694,7 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       settingsDraft.instructionPresets.push(preset)
       settingsDraft.activeInstructionPresetId = preset.id
+      activeChatInstructionPresetId = preset.id
       mountSettingsForm(
         settingsDraft,
         settingsConnections,
@@ -2712,6 +2763,13 @@ export function setup(ctx: SpindleFrontendContext) {
       const previousChatId = activeChat?.id ?? null
       activeChat = message.chat
       const chatId = message.chat?.id ?? null
+      const pendingInstructionPresetId = chatId
+        ? pendingChatInstructionPresets.get(chatId)
+        : undefined
+      if (chatId && pendingInstructionPresetId === message.instructionPresetId) {
+        pendingChatInstructionPresets.delete(chatId)
+      }
+      activeChatInstructionPresetId = pendingInstructionPresetId ?? message.instructionPresetId
       const submittedNotes = chatId ? submittedFandomNotesSaves.get(chatId) : undefined
       const localNotes = pendingFandomNotesSave?.chatId === chatId
         ? pendingFandomNotesSave.notes
@@ -2738,6 +2796,7 @@ export function setup(ctx: SpindleFrontendContext) {
           ? previousAnchorId
           : null
       }
+      syncInstructionPresetSelection(activeChatInstructionPresetId)
       clearError()
       if (message.error && message.chat) showError(message.error)
       renderContinuity()

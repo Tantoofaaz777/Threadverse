@@ -406,7 +406,11 @@ async function saveAutomaticSettings(value: unknown, userId: string): Promise<vo
   send({ type: 'threadverse:settings_save_result', scope: 'automatic' }, userId)
 }
 
-async function savePromptSettings(value: unknown, userId: string): Promise<void> {
+async function savePromptSettings(
+  value: unknown,
+  userId: string,
+  chat?: { id: string; name: string },
+): Promise<void> {
   if (!value || typeof value !== 'object') throw new Error('Invalid prompt settings payload.')
   const input = value as Partial<ThreadversePromptSettings>
   const instructionPresets = validateInstructionPresets(input.instructionPresets)
@@ -415,10 +419,60 @@ async function savePromptSettings(value: unknown, userId: string): Promise<void>
   await queueStoreWrite(userId, async () => {
     const store = await loadStore(userId)
     store.settings = applyPromptSettings(store.settings, { instructionPresets, activeInstructionPresetId })
+    const validPresetIds = new Set(instructionPresets.map((preset) => preset.id))
+    for (const [chatId, continuity] of Object.entries(store.chats)) {
+      if (continuity.instructionPresetId && !validPresetIds.has(continuity.instructionPresetId)) {
+        delete continuity.instructionPresetId
+      }
+      if (
+        continuity.rounds.length === 0
+        && !continuity.fandomNotes.trim()
+        && !continuity.instructionPresetId
+        && !continuity.forkSourceChatId
+      ) delete store.chats[chatId]
+    }
+    if (chat?.id && typeof chat.name === 'string') {
+      const continuity = store.chats[chat.id] ?? {
+        chatId: chat.id,
+        chatName: chat.name,
+        fandomNotes: '',
+        rounds: [],
+      }
+      continuity.chatName = chat.name || continuity.chatName
+      continuity.instructionPresetId = activeInstructionPresetId
+      store.chats[chat.id] = continuity
+    }
     await saveStore(store, userId)
   })
   spindle.toast.success('Prompt saved.', { userId })
   send({ type: 'threadverse:settings_save_result', scope: 'prompt' }, userId)
+}
+
+async function setChatInstructionPreset(
+  chatId: string,
+  chatName: string,
+  presetId: string,
+  userId: string,
+): Promise<void> {
+  if (!chatId || typeof chatName !== 'string' || !presetId) {
+    throw new Error('Invalid chat instruction preset payload.')
+  }
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    if (!store.settings.instructionPresets.some((preset) => preset.id === presetId)) {
+      throw new Error('That instruction preset has not been saved yet.')
+    }
+    const continuity = store.chats[chatId] ?? {
+      chatId,
+      chatName,
+      fandomNotes: '',
+      rounds: [],
+    }
+    continuity.chatName = chatName || continuity.chatName
+    continuity.instructionPresetId = presetId
+    store.chats[chatId] = continuity
+    await saveStore(store, userId)
+  })
 }
 
 async function sendActiveChat(
@@ -428,13 +482,13 @@ async function sendActiveChat(
   requestId?: number,
 ): Promise<void> {
   if (!hasChatPermissions()) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', requestId, error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', instructionPresetId: null, requestId, error: 'Grant the Chats and Chat Mutation permissions to load roleplay messages.' }, userId)
     return
   }
   const activeChat = await spindle.chats.getActive(userId)
   if (expectedChatId && activeChat?.id !== expectedChatId) return
   if (!activeChat) {
-    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
+    send({ type: 'threadverse:active_chat', chat: null, messages: [], rounds: [], feedRounds: [], fandomNotes: '', instructionPresetId: null, requestId, error: 'Open a roleplay chat, then refresh this list.' }, userId)
     return
   }
   const rawMessages = await spindle.chat.getMessages(activeChat.id)
@@ -446,6 +500,11 @@ async function sendActiveChat(
     messages: rawMessages.map((message, index) => ({ id: message.id, index: index + 1, role: message.role, content: message.content })),
     rounds: summarizeRounds(continuity?.rounds ?? []), feedRounds: feedRounds(continuity?.rounds ?? []),
     fandomNotes: continuity?.fandomNotes ?? '',
+    instructionPresetId: store.settings.instructionPresets.some(
+      (preset) => preset.id === continuity?.instructionPresetId,
+    )
+      ? continuity!.instructionPresetId!
+      : store.settings.activeInstructionPresetId,
     requestId, error: options?.error, notice: options?.notice,
   }, userId)
 }
@@ -470,6 +529,7 @@ async function promptForRound(
   fandomNotesOverride?: string,
   transformStoryMessages: (messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]> = async (messages) => messages,
   countContextTokens?: (text: string) => Promise<number>,
+  instructionPresetIdOverride?: string,
 ): Promise<{ text: string; recentContent: string }> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
@@ -499,7 +559,9 @@ async function promptForRound(
       fandom = limits.fandomThreadLimit === 0 ? [] : fandomCandidates.slice(-limits.fandomThreadLimit)
     }
   }
-  const preset = store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
+  const chatPresetId = instructionPresetIdOverride ?? store.chats[chatId]?.instructionPresetId
+  const preset = store.settings.instructionPresets.find((item) => item.id === chatPresetId)
+    ?? store.settings.instructionPresets.find((item) => item.id === store.settings.activeInstructionPresetId)
   if (!preset) throw new Error('Choose and save an instruction preset before generating.')
 
   const previousMessages = previous.flatMap((round) => round.messages)
@@ -650,6 +712,7 @@ async function runGeneration(
   roundId?: string,
   fandomNotesOverride?: string,
   installmentLabel = '',
+  instructionPresetId?: string,
 ) {
   const connections = await getConnections(userId)
   throwIfAborted(active)
@@ -681,6 +744,7 @@ async function runGeneration(
     fandomNotesOverride,
     transformStoryMessages,
     countContextTokens,
+    instructionPresetId,
   )
   const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(preparedPrompt.text, {
     chatId,
@@ -840,6 +904,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       undefined,
       payload.fandomNotes,
       installmentLabel,
+      payload.instructionPresetId,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
@@ -888,6 +953,7 @@ async function regenerateThread(
   chatId: string,
   roundId: string,
   fandomNotes: string | undefined,
+  instructionPresetId: string | undefined,
   userId: string,
 ): Promise<void> {
   const active = beginGeneration(userId, chatId, 'regenerate', roundId)
@@ -909,6 +975,7 @@ async function regenerateThread(
       roundId,
       fandomNotes,
       round.installmentLabel,
+      instructionPresetId,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
@@ -979,6 +1046,7 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
     if (
       continuity.rounds.length === 0
       && !continuity.fandomNotes.trim()
+      && !continuity.instructionPresetId
       && !continuity.forkSourceChatId
     ) delete store.chats[chatId]
     await saveStore(store, userId)
@@ -1024,6 +1092,7 @@ async function saveFandomNotes(
     if (
       continuity.rounds.length === 0
       && !notes.trim()
+      && !continuity.instructionPresetId
       && !continuity.forkSourceChatId
     ) delete store.chats[chatId]
     else store.chats[chatId] = continuity
@@ -1047,6 +1116,9 @@ async function countRecentContextTokens(
     const previewStore = payload.settings
       ? normalizeStore({ version: 1, settings: payload.settings, chats: stored.chats })
       : stored
+    if (payload.settings && previewStore.chats[payload.chatId]) {
+      previewStore.chats[payload.chatId].instructionPresetId = previewStore.settings.activeInstructionPresetId
+    }
     const connections = await getConnections(userId)
     const connection = selectConnection(connections, payload.connectionId)
     let nativeUnavailable = false
@@ -1133,7 +1205,19 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
     if (payload.type === 'threadverse:auto_save_settings') { await saveAutomaticSettings(payload.settings, userId); return }
-    if (payload.type === 'threadverse:save_prompt') { await savePromptSettings(payload.settings, userId); return }
+    if (payload.type === 'threadverse:save_prompt') {
+      await savePromptSettings(payload.settings, userId, payload.chat)
+      return
+    }
+    if (payload.type === 'threadverse:set_chat_instruction_preset') {
+      await setChatInstructionPreset(payload.chatId, payload.chatName, payload.presetId, userId)
+      send({
+        type: 'threadverse:chat_instruction_preset_save_result',
+        chatId: payload.chatId,
+        presetId: payload.presetId,
+      }, userId)
+      return
+    }
     if (payload.type === 'threadverse:save_fandom_notes') {
       await saveFandomNotes(payload.chatId, payload.chatName, payload.notes, userId)
       return
@@ -1202,7 +1286,13 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
     }
     if (payload.type === 'threadverse:generate_thread') { await generateThread(payload, userId); return }
     if (payload.type === 'threadverse:regenerate_thread') {
-      await regenerateThread(payload.chatId, payload.roundId, payload.fandomNotes, userId)
+      await regenerateThread(
+        payload.chatId,
+        payload.roundId,
+        payload.fandomNotes,
+        payload.instructionPresetId,
+        userId,
+      )
       return
     }
     if (payload.type === 'threadverse:select_feed_version') { await selectRoundFeedVersion(payload.chatId, payload.roundId, payload.versionId, userId); return }
@@ -1236,6 +1326,16 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
         type: 'threadverse:fandom_notes_save_result',
         chatId: payload.chatId,
         notes: payload.notes,
+        error: message,
+      }, userId)
+      return
+    }
+    if (payload.type === 'threadverse:set_chat_instruction_preset') {
+      spindle.toast.error(message, { userId })
+      send({
+        type: 'threadverse:chat_instruction_preset_save_result',
+        chatId: payload.chatId,
+        presetId: payload.presetId,
         error: message,
       }, userId)
       return

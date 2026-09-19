@@ -127,7 +127,17 @@ export type FrontendToBackendMessage =
       settings: ThreadverseSettingsPayload | null
     }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
-  | { type: 'threadverse:save_prompt'; settings: ThreadversePromptSettings }
+  | {
+      type: 'threadverse:save_prompt'
+      settings: ThreadversePromptSettings
+      chat?: { id: string; name: string }
+    }
+  | {
+      type: 'threadverse:set_chat_instruction_preset'
+      chatId: string
+      chatName: string
+      presetId: string
+    }
   | { type: 'threadverse:save_fandom_notes'; chatId: string; chatName: string; notes: string }
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | {
@@ -149,8 +159,15 @@ export type FrontendToBackendMessage =
       messageIds: string[]
       fandomNotes?: string
       installmentLabel?: string
+      instructionPresetId?: string
     }
-  | { type: 'threadverse:regenerate_thread'; chatId: string; roundId: string; fandomNotes?: string }
+  | {
+      type: 'threadverse:regenerate_thread'
+      chatId: string
+      roundId: string
+      fandomNotes?: string
+      instructionPresetId?: string
+    }
   | { type: 'threadverse:select_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_round'; chatId: string; roundId: string }
@@ -166,6 +183,7 @@ export type BackendToFrontendMessage =
       rounds: RoundSummary[]
       feedRounds: FeedRound[]
       fandomNotes: string
+      instructionPresetId: string | null
       requestId?: number
       error?: string
       notice?: string
@@ -205,6 +223,12 @@ export type BackendToFrontendMessage =
   | { type: 'threadverse:instruction_preset_name'; name: string | null }
   | { type: 'threadverse:instruction_preset_rename'; presetId: string; name: string | null }
   | { type: 'threadverse:settings_save_result'; scope: 'automatic' | 'prompt'; error?: string }
+  | {
+      type: 'threadverse:chat_instruction_preset_save_result'
+      chatId: string
+      presetId: string
+      error?: string
+    }
   | { type: 'threadverse:fandom_notes_save_result'; chatId: string; notes: string; error?: string }
   | {
       type: 'threadverse:instruction_editor_result'
@@ -228,6 +252,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:count_recent_context_tokens'
     || type === 'threadverse:auto_save_settings'
     || type === 'threadverse:save_prompt'
+    || type === 'threadverse:set_chat_instruction_preset'
     || type === 'threadverse:save_fandom_notes'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:request_instruction_preset_rename'

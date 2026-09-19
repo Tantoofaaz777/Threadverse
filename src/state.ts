@@ -32,6 +32,7 @@ export interface ChatContinuity {
   chatName: string
   fandomNotes: string
   rounds: StoredRound[]
+  instructionPresetId?: string
   forkSourceChatId?: string
   forkedAtMessageIndex?: number
 }
@@ -271,6 +272,9 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
     const fandomNotes = typeof rawChat.fandomNotes === 'string'
       ? rawChat.fandomNotes
       : existing?.fandomNotes ?? ''
+    const instructionPresetId = typeof rawChat.instructionPresetId === 'string' && rawChat.instructionPresetId
+      ? rawChat.instructionPresetId
+      : existing?.instructionPresetId
     const forkSourceChatId = typeof rawChat.forkSourceChatId === 'string' && rawChat.forkSourceChatId
       ? rawChat.forkSourceChatId
       : existing?.forkSourceChatId
@@ -282,7 +286,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
     const recoveredRounds = rawChat.rounds
       .map((round, index) => normalizeStoredRound(round, index + 1))
       .filter((round): round is StoredRound => Boolean(round))
-    if (recoveredRounds.length === 0 && !fandomNotes.trim() && !forkSourceChatId) continue
+    if (recoveredRounds.length === 0 && !fandomNotes.trim() && !instructionPresetId && !forkSourceChatId) continue
     const chatId = existingChatId
     if (!chatId) continue
     const rounds = existing ? [...existing.rounds, ...recoveredRounds] : recoveredRounds
@@ -304,6 +308,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
         : existing?.chatName ?? 'Untitled chat',
       fandomNotes,
       rounds: uniqueRounds,
+      ...(instructionPresetId ? { instructionPresetId } : {}),
       ...(forkSourceChatId ? { forkSourceChatId, forkedAtMessageIndex } : {}),
     }
   }
@@ -391,10 +396,24 @@ export function normalizeStore(value: unknown): ThreadverseStore {
   if (mergedSettings.fandomThreadLimit === DEFAULT_CONTINUITY.fandomThreadLimit) mergedSettings.fandomThreadLimit = null
   if (mergedSettings.fandomContinuityTokenLimit === DEFAULT_CONTINUITY.fandomContinuityTokenLimit) mergedSettings.fandomContinuityTokenLimit = null
 
+  const chats = normalizeStoredChats(candidate.chats)
+  const validPresetIds = new Set(instructionPresets.map((preset) => preset.id))
+  for (const [chatId, continuity] of Object.entries(chats)) {
+    if (continuity.instructionPresetId && !validPresetIds.has(continuity.instructionPresetId)) {
+      delete continuity.instructionPresetId
+    }
+    if (
+      continuity.rounds.length === 0
+      && !continuity.fandomNotes.trim()
+      && !continuity.instructionPresetId
+      && !continuity.forkSourceChatId
+    ) delete chats[chatId]
+  }
+
   return {
     version: 1,
     settings: mergedSettings,
-    chats: normalizeStoredChats(candidate.chats),
+    chats,
   }
 }
 
@@ -443,7 +462,7 @@ export function resetContinuityRounds(
 ): void {
   const existing = store.chats[chatId]
   const preservedNotes = fandomNotes ?? existing?.fandomNotes ?? ''
-  if (!preservedNotes.trim() && !existing?.forkSourceChatId) {
+  if (!preservedNotes.trim() && !existing?.instructionPresetId && !existing?.forkSourceChatId) {
     delete store.chats[chatId]
     return
   }
@@ -452,6 +471,9 @@ export function resetContinuityRounds(
     chatName: chatName || existing?.chatName || 'Untitled chat',
     fandomNotes: preservedNotes,
     rounds: [],
+    ...(existing?.instructionPresetId
+      ? { instructionPresetId: existing.instructionPresetId }
+      : {}),
     ...(existing?.forkSourceChatId
       ? {
           forkSourceChatId: existing.forkSourceChatId,

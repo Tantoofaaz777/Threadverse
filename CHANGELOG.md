@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.0
+
+- Remember the selected instruction preset independently for each roleplay chat and apply it to generation and regeneration.
+- Save existing preset changes immediately while keeping new or edited prompt content behind the explicit Save Prompt action.
+- Preserve the chat preset through continuity resets, empty continuity state, round deletion, and fork inheritance.
+- Keep the global active preset as the fallback for chats that do not yet have their own saved choice.
+
 ## 1.13.0
 
 - Replace Spindle dropdown components with browser-native selects for the connection, continuity modes, instruction presets, and Feed round picker.

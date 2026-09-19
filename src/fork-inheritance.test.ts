@@ -89,6 +89,7 @@ describe('fork continuity inheritance', () => {
         '2026-03-01T00:00:00.000Z',
       ),
     ], 'Keep the running joke.')
+    source.instructionPresetId = 'episode-discussion'
     source.rounds[0].feedVersions.push({
       id: 'round-1-version-2',
       createdAt: '2026-01-02T00:00:00.000Z',
@@ -113,6 +114,7 @@ describe('fork continuity inheritance', () => {
       chatId: 'fork',
       chatName: 'Forked chat',
       fandomNotes: 'Keep the running joke.',
+      instructionPresetId: 'episode-discussion',
       forkSourceChatId: 'source',
       forkedAtMessageIndex: 3,
     })
