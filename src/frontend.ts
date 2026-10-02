@@ -347,6 +347,9 @@ const STYLES = `
   }
 
   .threadverse-message:last-child { border-bottom: 0; }
+  .threadverse-message.has-hidden-indicator {
+    grid-template-columns: 14px 27px 14px minmax(0, 1fr);
+  }
   .threadverse-message:hover { background: var(--lumiverse-fill-subtle); }
   .threadverse-message.is-selected { background: var(--lumiverse-success-015, rgba(34, 197, 94, .15)); }
   .threadverse-message.is-used {
@@ -398,6 +401,13 @@ const STYLES = `
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .threadverse-message-hidden-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--lumiverse-text-muted);
   }
 
   .threadverse-actions {
@@ -1248,16 +1258,14 @@ export function setup(ctx: SpindleFrontendContext) {
       return
     }
 
-    const visibleIds = new Set(regexScripts.map((script) => script.id))
     const list = document.createElement('div')
     list.className = 'threadverse-regex-list'
     const syncSelection = () => {
       if (!settingsDraft) return
-      const hiddenSelected = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id))
       const visibleSelected = Array.from(
         list.querySelectorAll<HTMLInputElement>('input[data-regex-script-id]:checked'),
       ).map((input) => input.dataset.regexScriptId!)
-      settingsDraft.outgoingRegexScriptIds = [...hiddenSelected, ...visibleSelected]
+      settingsDraft.outgoingRegexScriptIds = visibleSelected
       scheduleAutomaticSave()
     }
 
@@ -1277,14 +1285,6 @@ export function setup(ctx: SpindleFrontendContext) {
       list.appendChild(row)
     }
     target.appendChild(list)
-
-    const hiddenCount = settingsDraft.outgoingRegexScriptIds.filter((id) => !visibleIds.has(id)).length
-    if (hiddenCount > 0) {
-      const hidden = document.createElement('p')
-      hidden.className = 'threadverse-settings-hint'
-      hidden.textContent = `${hiddenCount} selected regex${hiddenCount === 1 ? ' is' : 'es are'} no longer available.`
-      target.appendChild(hidden)
-    }
   }
 
   function mountSettingsForm(
@@ -2230,7 +2230,20 @@ export function setup(ctx: SpindleFrontendContext) {
       content.className = 'threadverse-message-content'
       content.textContent = message.content.replace(/\s+/g, ' ').trim() || '(empty message)'
 
-      row.append(checkbox, index, content)
+      row.append(checkbox, index)
+      if (message.hidden) {
+        row.classList.add('has-hidden-indicator')
+        const indicator = document.createElement('span')
+        indicator.className = 'threadverse-message-hidden-indicator'
+        indicator.title = 'Hidden in the main chat. Still available in Threadverse.'
+        indicator.setAttribute('role', 'img')
+        indicator.setAttribute('aria-label', indicator.title)
+        indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m2 2 20 20M10.58 10.58a2 2 0 0 0 2.84 2.84M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.87 13.87 0 0 1-3.06 3.73M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a10.94 10.94 0 0 0 5.39-1.61" />
+        </svg>`
+        row.appendChild(indicator)
+      }
+      row.appendChild(content)
       messageList.appendChild(row)
     }
 

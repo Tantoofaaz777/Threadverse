@@ -292,14 +292,14 @@ async function getOutgoingRegexScripts(
 async function listOutgoingRegexScripts(
   chat: { id: string; character_id?: string | null } | null,
   userId: string,
-): Promise<RegexScriptDTO[]> {
-  if (!spindle.permissions.has('regex_scripts')) return []
+): Promise<RegexScriptDTO[] | null> {
+  if (!spindle.permissions.has('regex_scripts')) return null
   try {
     return await getOutgoingRegexScripts(chat, userId)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown regex listing error.'
     spindle.log.warn(`[Threadverse] Could not load outgoing regex scripts: ${message}`)
-    return []
+    return null
   }
 }
 
@@ -310,7 +310,21 @@ async function sendSettingsState(userId: string): Promise<void> {
     spindle.chats.getActive(userId),
   ])
   const outgoingRegexScripts = await listOutgoingRegexScripts(chat, userId)
-  const settings = { ...store.settings }
+  let settings = { ...store.settings }
+  if (outgoingRegexScripts !== null) {
+    const availableIds = new Set(outgoingRegexScripts.map((script) => script.id))
+    if (settings.outgoingRegexScriptIds.some((id) => !availableIds.has(id))) {
+      await queueStoreWrite(userId, async () => {
+        const latestStore = await loadStore(userId)
+        const retainedIds = latestStore.settings.outgoingRegexScriptIds.filter((id) => availableIds.has(id))
+        if (retainedIds.length !== latestStore.settings.outgoingRegexScriptIds.length) {
+          latestStore.settings.outgoingRegexScriptIds = retainedIds
+          await saveStore(latestStore, userId)
+        }
+        settings = { ...latestStore.settings }
+      })
+    }
+  }
   const selected = connections.find((item) => item.id === settings.connectionId)
     ?? connections.find((item) => item.isDefault) ?? connections[0]
   if (!selected) settings.connectionId = null
@@ -320,7 +334,7 @@ async function sendSettingsState(userId: string): Promise<void> {
     settings,
     defaultInstructions: DEFAULT_INSTRUCTIONS,
     connections,
-    regexScripts: outgoingRegexScripts.map(toRegexScriptSummary),
+    regexScripts: (outgoingRegexScripts ?? []).map(toRegexScriptSummary),
     regexScriptsPermissionGranted: spindle.permissions.has('regex_scripts'),
   }, userId)
 }
@@ -497,7 +511,13 @@ async function sendActiveChat(
   const continuity = store.chats[activeChat.id]
   send({
     type: 'threadverse:active_chat', chat: { id: activeChat.id, name: activeChat.name },
-    messages: rawMessages.map((message, index) => ({ id: message.id, index: index + 1, role: message.role, content: message.content })),
+    messages: rawMessages.map((message, index) => ({
+      id: message.id,
+      index: index + 1,
+      role: message.role,
+      content: message.content,
+      hidden: message.extra?.hidden === true,
+    })),
     rounds: summarizeRounds(continuity?.rounds ?? []), feedRounds: feedRounds(continuity?.rounds ?? []),
     fandomNotes: continuity?.fandomNotes ?? '',
     instructionPresetId: store.settings.instructionPresets.some(

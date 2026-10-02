@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.0
+
+- Mark messages hidden in the main chat with an eye-off icon in the Make message picker while keeping them selectable for Threadverse generation.
+- Refresh the hidden indicator when messages are hidden or shown in Lumiverse.
+- Silently remove unavailable outgoing regex scripts from the saved selection instead of displaying a warning.
+- Preserve regex selections when their library cannot be loaded or the Regex Scripts permission is unavailable.
+
 ## 1.14.0
 
 - Remember the selected instruction preset independently for each roleplay chat and apply it to generation and regeneration.

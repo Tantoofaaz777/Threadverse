@@ -11,6 +11,7 @@ export interface ChatMessageSummary {
   index: number
   role: 'system' | 'user' | 'assistant'
   content: string
+  hidden?: boolean
 }
 
 export interface RoundSummary {
