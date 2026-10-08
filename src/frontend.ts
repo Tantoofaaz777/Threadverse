@@ -427,6 +427,10 @@ const STYLES = `
   .threadverse-ao3-choice-field > legend { margin-bottom: 7px; padding: 0; font-size: 11px; font-weight: 700; }
   .threadverse-ao3-choice-hint { margin-left: 8px; color: var(--lumiverse-text-muted); font-size: 10px; font-weight: 400; }
   .threadverse-ao3-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+  .threadverse-ao3-choice-description {
+    margin: 7px 0 0; color: var(--lumiverse-text-muted);
+    font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
+  }
   .threadverse-ao3-choice {
     min-height: 32px; max-width: 100%; padding: 6px 9px;
     border: 1px solid var(--lumiverse-border); border-radius: var(--lumiverse-radius);

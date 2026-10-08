@@ -3,10 +3,44 @@ import {
   emptyAo3Information, normalizeAo3Information, type Ao3Information,
 } from './ao3'
 
+// Definitions summarized from AO3's Posting and Editing and Tags FAQs.
+const CHOICE_DESCRIPTIONS = {
+  rating: {
+    'Not Rated': 'No content rating is specified; the work may still contain mature or explicit material.',
+    'General Audiences': 'Suitable for all ages, with content unlikely to disturb readers.',
+    'Teen And Up Audiences': 'Intended for ages 13 and up; some content may be unsuitable for younger readers.',
+    Mature: 'Adult themes, including sex or violence, with less graphic detail than Explicit.',
+    Explicit: 'Adult content described in detail, such as sexual scenes or graphic violence.',
+  },
+  archiveWarnings: {
+    'Creator Chose Not To Use Archive Warnings': 'The creator leaves specific warnings undisclosed or is unsure which apply. Any of the listed warning topics may be present.',
+    'No Archive Warnings Apply': 'None of the four specific Archive Warnings apply. Other sensitive themes may still be present.',
+    'Graphic Depictions Of Violence': 'Violence is depicted with graphic detail, such as gore or explicitly described injuries.',
+    'Major Character Death': 'A major character in the work or its source canon dies.',
+    'Rape/Non-Con': 'Contains rape or sexual activity without consent. Non-Con means non-consensual.',
+    'Underage Sex': 'Depicts sexual activity involving characters under 18; dating or kissing alone does not count.',
+  },
+  categories: {
+    'F/F': 'Female/female romantic or sexual relationships.',
+    'F/M': 'Female/male romantic or sexual relationships.',
+    Gen: 'Romantic or sexual relationships are absent or are not the main focus.',
+    'M/M': 'Male/male romantic or sexual relationships.',
+    Multi: 'More than one relationship category, or a relationship involving multiple partners.',
+    Other: 'Relationships that do not fit the other categories.',
+  },
+} satisfies {
+  rating: Record<typeof AO3_RATINGS[number], string>
+  archiveWarnings: Record<typeof AO3_WARNINGS[number], string>
+  categories: Record<typeof AO3_CATEGORIES[number], string>
+}
+
+let editorId = 0
+
 export function mountAo3Editor(
   target: HTMLElement,
   onChange: (information: Ao3Information) => void,
 ) {
+  const descriptionPrefix = `threadverse-ao3-description-${++editorId}`
   let information = emptyAo3Information()
   const root = document.createElement('div')
   root.className = 'threadverse-ao3-editor'
@@ -37,7 +71,15 @@ export function mountAo3Editor(
     legend.appendChild(hint)
     const group = document.createElement('div')
     group.className = 'threadverse-ao3-choices'
+    const explanation = document.createElement('p')
+    explanation.className = 'threadverse-ao3-choice-description'
+    explanation.textContent = 'Hover, focus, or tap an option for its meaning.'
     for (const value of options) {
+      const description = (CHOICE_DESCRIPTIONS[key] as Record<string, string>)[value]!
+      const accessibleDescription = document.createElement('span')
+      accessibleDescription.id = `${descriptionPrefix}-${key}-${group.childElementCount}`
+      accessibleDescription.hidden = true
+      accessibleDescription.textContent = description
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'threadverse-ao3-choice'
@@ -45,7 +87,15 @@ export function mountAo3Editor(
       button.dataset.value = value
       button.textContent = value
       button.setAttribute('aria-label', value)
+      button.setAttribute('aria-describedby', accessibleDescription.id)
+      const showDescription = () => {
+        const text = `${value}: ${description}`
+        if (explanation.textContent !== text) explanation.textContent = text
+      }
+      button.addEventListener('pointermove', showDescription)
+      button.addEventListener('focus', showDescription)
       button.addEventListener('click', () => {
+        showDescription()
         if (key === 'rating') information.rating = information.rating === value ? null : value as Ao3Information['rating']
         else {
           const selected = new Set<string>(information[key])
@@ -57,9 +107,9 @@ export function mountAo3Editor(
         onChange(normalizeAo3Information(information))
       })
       choices.push({ button, key, value })
-      group.appendChild(button)
+      group.append(button, accessibleDescription)
     }
-    field.append(legend, group)
+    field.append(legend, group, explanation)
     root.appendChild(field)
   }
 
