@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.5
+
+- Show only the description in AO3 hover tooltips, without repeating the option label.
+
 ## 1.16.4
 
 - Use native hover tooltips for AO3 choices on devices with a hover-capable pointer. Keep the selected-option explanation below each group on touch-only devices, hiding it when the selection is empty.
