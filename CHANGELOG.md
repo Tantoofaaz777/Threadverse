@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.3
+
+- Hide AO3 choice hints for empty selections and remove the click/tap instruction. When deselecting an option, explain a remaining selected option or hide the hint if the group is empty.
+
 ## 1.16.2
 
 - Show AO3 choice explanations only when clicking, tapping, or activating a button with the keyboard.

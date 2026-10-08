@@ -55,6 +55,11 @@ export function mountAo3Editor(
   root.appendChild(toggleLabel)
 
   const choices: Array<{ button: HTMLButtonElement; key: 'rating' | 'archiveWarnings' | 'categories'; value: string }> = []
+  const explanations: Array<{
+    key: 'rating' | 'archiveWarnings' | 'categories'
+    element: HTMLParagraphElement
+    lastChoice?: string
+  }> = []
   const inputs = new Map<typeof AO3_TEXT_FIELDS[number][0], HTMLInputElement | HTMLTextAreaElement>()
   for (const [key, label, options] of [
     ['rating', 'Rating', AO3_RATINGS],
@@ -73,7 +78,9 @@ export function mountAo3Editor(
     group.className = 'threadverse-ao3-choices'
     const explanation = document.createElement('p')
     explanation.className = 'threadverse-ao3-choice-description'
-    explanation.textContent = 'Click or tap an option for its meaning.'
+    explanation.hidden = true
+    const explanationState = { key, element: explanation, lastChoice: undefined as string | undefined }
+    explanations.push(explanationState)
     for (const value of options) {
       const description = (CHOICE_DESCRIPTIONS[key] as Record<string, string>)[value]!
       const accessibleDescription = document.createElement('span')
@@ -88,12 +95,8 @@ export function mountAo3Editor(
       button.textContent = value
       button.setAttribute('aria-label', value)
       button.setAttribute('aria-describedby', accessibleDescription.id)
-      const showDescription = () => {
-        const text = `${value}: ${description}`
-        if (explanation.textContent !== text) explanation.textContent = text
-      }
       button.addEventListener('click', () => {
-        showDescription()
+        explanationState.lastChoice = value
         if (key === 'rating') information.rating = information.rating === value ? null : value as Ao3Information['rating']
         else {
           const selected = new Set<string>(information[key])
@@ -140,6 +143,17 @@ export function mountAo3Editor(
     for (const { button, key, value } of choices) {
       const selected = key === 'rating' ? information.rating === value : (information[key] as string[]).includes(value)
       button.setAttribute('aria-pressed', String(selected))
+    }
+    for (const explanation of explanations) {
+      const selected: string[] = explanation.key === 'rating'
+        ? information.rating ? [information.rating] : []
+        : information[explanation.key]
+      const value = explanation.lastChoice && selected.includes(explanation.lastChoice)
+        ? explanation.lastChoice : selected[selected.length - 1]
+      explanation.lastChoice = value
+      explanation.element.hidden = !value
+      const text = value ? `${value}: ${(CHOICE_DESCRIPTIONS[explanation.key] as Record<string, string>)[value]}` : ''
+      if (explanation.element.textContent !== text) explanation.element.textContent = text
     }
     for (const [key, input] of inputs) {
       if (input.value !== information[key]) input.value = information[key]
