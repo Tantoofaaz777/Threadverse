@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.2
+
+- Show AO3 choice explanations only when clicking, tapping, or activating a button with the keyboard.
+
 ## 1.16.1
 
 - Explain every AO3 Rating, Archive Warning, and Category when hovering, focusing, or tapping a choice, with descriptions also available to screen readers.

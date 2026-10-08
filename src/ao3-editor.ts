@@ -73,7 +73,7 @@ export function mountAo3Editor(
     group.className = 'threadverse-ao3-choices'
     const explanation = document.createElement('p')
     explanation.className = 'threadverse-ao3-choice-description'
-    explanation.textContent = 'Hover, focus, or tap an option for its meaning.'
+    explanation.textContent = 'Click or tap an option for its meaning.'
     for (const value of options) {
       const description = (CHOICE_DESCRIPTIONS[key] as Record<string, string>)[value]!
       const accessibleDescription = document.createElement('span')
@@ -92,8 +92,6 @@ export function mountAo3Editor(
         const text = `${value}: ${description}`
         if (explanation.textContent !== text) explanation.textContent = text
       }
-      button.addEventListener('pointermove', showDescription)
-      button.addEventListener('focus', showDescription)
       button.addEventListener('click', () => {
         showDescription()
         if (key === 'rating') information.rating = information.rating === value ? null : value as Ao3Information['rating']
