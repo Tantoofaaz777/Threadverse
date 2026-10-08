@@ -51,6 +51,7 @@ import {
   type ForkMessageReference,
 } from './fork-inheritance'
 import { orderSelectedMessageIds } from './range-selection'
+import { emptyAo3Information, hasAo3Information, normalizeAo3Information, type Ao3Information } from './ao3'
 import type {
   ChatDTO,
   ChatForkedPayloadDTO,
@@ -441,6 +442,7 @@ async function savePromptSettings(
       if (
         continuity.rounds.length === 0
         && !continuity.fandomNotes.trim()
+        && !hasAo3Information(continuity.ao3Information)
         && !continuity.instructionPresetId
         && !continuity.forkSourceChatId
       ) delete store.chats[chatId]
@@ -520,6 +522,7 @@ async function sendActiveChat(
     })),
     rounds: summarizeRounds(continuity?.rounds ?? []), feedRounds: feedRounds(continuity?.rounds ?? []),
     fandomNotes: continuity?.fandomNotes ?? '',
+    ao3Information: continuity?.ao3Information ?? emptyAo3Information(),
     instructionPresetId: store.settings.instructionPresets.some(
       (preset) => preset.id === continuity?.instructionPresetId,
     )
@@ -550,6 +553,7 @@ async function promptForRound(
   transformStoryMessages: (messages: ChatMessageSummary[]) => Promise<ChatMessageSummary[]> = async (messages) => messages,
   countContextTokens?: (text: string) => Promise<number>,
   instructionPresetIdOverride?: string,
+  ao3InformationOverride?: Ao3Information,
 ): Promise<{ text: string; recentContent: string }> {
   const earlier = store.chats[chatId]?.rounds.slice(0, cutoff) ?? []
   const limits = resolveContinuity(store.settings)
@@ -619,6 +623,9 @@ async function promptForRound(
       recentRange: { label: installmentLabel || 'CURRENT RANGE', content: recentContent },
       fandomContinuity: fandom,
       fandomNotes: fandomNotesOverride ?? store.chats[chatId]?.fandomNotes ?? '',
+      ao3Information: ao3InformationOverride === undefined
+        ? store.chats[chatId]?.ao3Information
+        : normalizeAo3Information(ao3InformationOverride),
       instructions: preset.instructions,
     }),
     recentContent,
@@ -733,6 +740,7 @@ async function runGeneration(
   fandomNotesOverride?: string,
   installmentLabel = '',
   instructionPresetId?: string,
+  ao3Information?: Ao3Information,
 ) {
   const connections = await getConnections(userId)
   throwIfAborted(active)
@@ -765,6 +773,7 @@ async function runGeneration(
     transformStoryMessages,
     countContextTokens,
     instructionPresetId,
+    ao3Information,
   )
   const { text: resolvedPrompt, diagnostics } = await spindle.macros.resolve(preparedPrompt.text, {
     chatId,
@@ -925,6 +934,7 @@ async function generateThread(payload: Extract<import('./shared').FrontendToBack
       payload.fandomNotes,
       installmentLabel,
       payload.instructionPresetId,
+      payload.ao3Information,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
@@ -974,6 +984,7 @@ async function regenerateThread(
   roundId: string,
   fandomNotes: string | undefined,
   instructionPresetId: string | undefined,
+  ao3Information: Ao3Information | undefined,
   userId: string,
 ): Promise<void> {
   const active = beginGeneration(userId, chatId, 'regenerate', roundId)
@@ -996,6 +1007,7 @@ async function regenerateThread(
       fandomNotes,
       round.installmentLabel,
       instructionPresetId,
+      ao3Information,
     )
     throwIfAborted(active)
     const feedVersion = createFeedVersion(feed)
@@ -1066,6 +1078,7 @@ async function deleteRound(chatId: string, roundId: string, userId: string): Pro
     if (
       continuity.rounds.length === 0
       && !continuity.fandomNotes.trim()
+      && !hasAo3Information(continuity.ao3Information)
       && !continuity.instructionPresetId
       && !continuity.forkSourceChatId
     ) delete store.chats[chatId]
@@ -1112,6 +1125,7 @@ async function saveFandomNotes(
     if (
       continuity.rounds.length === 0
       && !notes.trim()
+      && !hasAo3Information(continuity.ao3Information)
       && !continuity.instructionPresetId
       && !continuity.forkSourceChatId
     ) delete store.chats[chatId]
@@ -1119,6 +1133,38 @@ async function saveFandomNotes(
     await saveStore(store, userId)
   })
   send({ type: 'threadverse:fandom_notes_save_result', chatId, notes }, userId)
+}
+
+async function saveAo3Information(
+  payload: Extract<import('./shared').FrontendToBackendMessage, { type: 'threadverse:save_ao3_information' }>,
+  userId: string,
+): Promise<void> {
+  if (
+    typeof payload.chatId !== 'string' || !payload.chatId
+    || typeof payload.chatName !== 'string'
+    || !Number.isInteger(payload.requestId)
+    || !payload.information || typeof payload.information !== 'object'
+    || typeof payload.information.enabled !== 'boolean'
+  ) throw new Error('Invalid AO3 information payload.')
+  if (!hasChatPermissions()) throw new Error('Grant the Chats and Chat Mutation permissions before saving AO3 information.')
+  const chat = await spindle.chats.get(payload.chatId, userId)
+  if (!chat) throw new Error('That roleplay chat no longer exists.')
+  const information = normalizeAo3Information(payload.information)
+  await queueStoreWrite(userId, async () => {
+    const store = await loadStore(userId)
+    const continuity = store.chats[chat.id] ?? { chatId: chat.id, chatName: chat.name, fandomNotes: '', rounds: [] }
+    continuity.chatName = chat.name || continuity.chatName
+    if (hasAo3Information(information)) continuity.ao3Information = information
+    else delete continuity.ao3Information
+    if (
+      !continuity.rounds.length && !continuity.fandomNotes.trim()
+      && !hasAo3Information(continuity.ao3Information)
+      && !continuity.instructionPresetId && !continuity.forkSourceChatId
+    ) delete store.chats[chat.id]
+    else store.chats[chat.id] = continuity
+    await saveStore(store, userId)
+  })
+  send({ type: 'threadverse:ao3_information_save_result', chatId: chat.id, requestId: payload.requestId }, userId)
 }
 
 async function countRecentContextTokens(
@@ -1181,6 +1227,8 @@ async function countRecentContextTokens(
       typeof payload.fandomNotes === 'string' ? payload.fandomNotes : undefined,
       transformStoryMessages,
       async (text) => (await countText(text)).total_tokens,
+      undefined,
+      payload.ao3Information,
     )
     const [resolvedRecent, resolvedPrompt] = await Promise.all([
       spindle.macros.resolve(prepared.recentContent, { chatId: payload.chatId, userId, commit: false }),
@@ -1220,6 +1268,10 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
       return
     }
     if (payload.type === 'threadverse:load_settings') { await sendSettingsState(userId); return }
+    if (payload.type === 'threadverse:save_ao3_information') {
+      await saveAo3Information(payload, userId)
+      return
+    }
     if (payload.type === 'threadverse:count_recent_context_tokens') {
       await countRecentContextTokens(payload, userId)
       return
@@ -1311,6 +1363,7 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
         payload.roundId,
         payload.fandomNotes,
         payload.instructionPresetId,
+        payload.ao3Information,
         userId,
       )
       return
@@ -1348,6 +1401,11 @@ spindle.onFrontendMessage(async (payload: unknown, userId: string) => {
         notes: payload.notes,
         error: message,
       }, userId)
+      return
+    }
+    if (payload.type === 'threadverse:save_ao3_information') {
+      spindle.toast.error(message, { userId })
+      send({ type: 'threadverse:ao3_information_save_result', chatId: payload.chatId, requestId: payload.requestId, error: message }, userId)
       return
     }
     if (payload.type === 'threadverse:set_chat_instruction_preset') {

@@ -12,6 +12,7 @@ import {
   type ThreadverseFeed,
 } from './shared'
 import { parseThreadverseFeed } from './feed'
+import { hasAo3Information, normalizeAo3Information, type Ao3Information } from './ao3'
 
 const LEGACY_DEFAULT_INSTRUCTIONS = `You are simulating an online fandom discussing a fictional story as if it were an ongoing television series or serialized fanfiction.
 
@@ -31,6 +32,7 @@ export interface ChatContinuity {
   chatId: string
   chatName: string
   fandomNotes: string
+  ao3Information?: Ao3Information
   rounds: StoredRound[]
   instructionPresetId?: string
   forkSourceChatId?: string
@@ -275,6 +277,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
     const instructionPresetId = typeof rawChat.instructionPresetId === 'string' && rawChat.instructionPresetId
       ? rawChat.instructionPresetId
       : existing?.instructionPresetId
+    const ao3Information = normalizeAo3Information(rawChat.ao3Information ?? existing?.ao3Information)
     const forkSourceChatId = typeof rawChat.forkSourceChatId === 'string' && rawChat.forkSourceChatId
       ? rawChat.forkSourceChatId
       : existing?.forkSourceChatId
@@ -286,7 +289,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
     const recoveredRounds = rawChat.rounds
       .map((round, index) => normalizeStoredRound(round, index + 1))
       .filter((round): round is StoredRound => Boolean(round))
-    if (recoveredRounds.length === 0 && !fandomNotes.trim() && !instructionPresetId && !forkSourceChatId) continue
+    if (recoveredRounds.length === 0 && !fandomNotes.trim() && !hasAo3Information(ao3Information) && !instructionPresetId && !forkSourceChatId) continue
     const chatId = existingChatId
     if (!chatId) continue
     const rounds = existing ? [...existing.rounds, ...recoveredRounds] : recoveredRounds
@@ -307,6 +310,7 @@ function normalizeStoredChats(value: unknown): Record<string, ChatContinuity> {
         ? rawChat.chatName
         : existing?.chatName ?? 'Untitled chat',
       fandomNotes,
+      ...(hasAo3Information(ao3Information) ? { ao3Information } : {}),
       rounds: uniqueRounds,
       ...(instructionPresetId ? { instructionPresetId } : {}),
       ...(forkSourceChatId ? { forkSourceChatId, forkedAtMessageIndex } : {}),
@@ -405,6 +409,7 @@ export function normalizeStore(value: unknown): ThreadverseStore {
     if (
       continuity.rounds.length === 0
       && !continuity.fandomNotes.trim()
+      && !hasAo3Information(continuity.ao3Information)
       && !continuity.instructionPresetId
       && !continuity.forkSourceChatId
     ) delete chats[chatId]
@@ -462,7 +467,7 @@ export function resetContinuityRounds(
 ): void {
   const existing = store.chats[chatId]
   const preservedNotes = fandomNotes ?? existing?.fandomNotes ?? ''
-  if (!preservedNotes.trim() && !existing?.instructionPresetId && !existing?.forkSourceChatId) {
+  if (!preservedNotes.trim() && !hasAo3Information(existing?.ao3Information) && !existing?.instructionPresetId && !existing?.forkSourceChatId) {
     delete store.chats[chatId]
     return
   }
@@ -470,6 +475,7 @@ export function resetContinuityRounds(
     chatId,
     chatName: chatName || existing?.chatName || 'Untitled chat',
     fandomNotes: preservedNotes,
+    ...(existing?.ao3Information ? { ao3Information: normalizeAo3Information(existing.ao3Information) } : {}),
     rounds: [],
     ...(existing?.instructionPresetId
       ? { instructionPresetId: existing.instructionPresetId }

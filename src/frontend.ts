@@ -24,6 +24,8 @@ import { addMessageRange, toggleMessageSelection } from './range-selection'
 import { shouldAcceptActiveChatResponse } from './chat-response'
 import { serializeFeedAsPlainText } from './feed'
 import { resolveFeedSwipe } from './feed-swipe'
+import { emptyAo3Information, normalizeAo3Information, type Ao3Information } from './ao3'
+import { mountAo3Editor } from './ao3-editor'
 
 const ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -410,6 +412,44 @@ const STYLES = `
     color: var(--lumiverse-text-muted);
   }
 
+  .threadverse-ao3 {
+    margin: 12px 0;
+    padding: 10px;
+    border: 1px solid var(--lumiverse-border);
+    border-radius: var(--lumiverse-radius);
+  }
+  .threadverse-ao3 > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+  .threadverse-ao3-status { float: right; color: var(--lumiverse-text-muted); font-size: 11px; font-weight: 400; }
+  .threadverse-ao3-editor { display: grid; gap: 14px; margin-top: 14px; }
+  .threadverse-ao3-editor > .threadverse-filter-toggle { justify-self: start; white-space: normal; }
+  .threadverse-ao3-editor .threadverse-switch-track { flex-shrink: 0; }
+  .threadverse-ao3-choice-field { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .threadverse-ao3-choice-field > legend { margin-bottom: 7px; padding: 0; font-size: 11px; font-weight: 700; }
+  .threadverse-ao3-choice-hint { margin-left: 8px; color: var(--lumiverse-text-muted); font-size: 10px; font-weight: 400; }
+  .threadverse-ao3-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+  .threadverse-ao3-choice {
+    min-height: 32px; max-width: 100%; padding: 6px 9px;
+    border: 1px solid var(--lumiverse-border); border-radius: var(--lumiverse-radius);
+    background: var(--lumiverse-fill-subtle); color: var(--lumiverse-text);
+    font: inherit; font-size: 11px; text-align: left; overflow-wrap: anywhere; cursor: pointer;
+  }
+  .threadverse-ao3-choice[aria-pressed="true"] {
+    border-color: var(--lumiverse-success, #22c55e);
+    background: var(--lumiverse-success-015, rgba(34, 197, 94, .15));
+  }
+  .threadverse-ao3-choice[aria-pressed="true"]::before { content: '✓ '; }
+  .threadverse-ao3-choice:disabled { opacity: .5; cursor: default; }
+  .threadverse-ao3-text-field { display: grid; gap: 6px; font-size: 11px; font-weight: 700; min-width: 0; }
+  .threadverse-ao3-text {
+    width: 100%; min-width: 0; box-sizing: border-box; padding: 8px;
+    border: 1px solid var(--lumiverse-border); border-radius: var(--lumiverse-radius);
+    background: var(--lumiverse-fill-subtle); color: var(--lumiverse-text);
+    font: inherit; font-size: 12px; font-weight: 400; resize: vertical;
+  }
+  .threadverse-ao3-text:focus-visible, .threadverse-ao3-choice:focus-visible {
+    outline: 2px solid var(--lumiverse-primary, #9370db); outline-offset: 2px;
+  }
+
   .threadverse-actions {
     display: flex;
     justify-content: flex-end;
@@ -745,6 +785,10 @@ export function setup(ctx: SpindleFrontendContext) {
           </label>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
+        <details class="threadverse-ao3">
+          <summary>AO3 information <span class="threadverse-ao3-status" data-ao3-status>Off</span></summary>
+          <div data-ao3-editor></div>
+        </details>
         <div class="threadverse-toolbar">
           <input class="threadverse-search" type="search" placeholder="Search messages..." aria-label="Search messages" />
           <label class="threadverse-filter-toggle">
@@ -973,6 +1017,42 @@ export function setup(ctx: SpindleFrontendContext) {
   const submittedFandomNotesSaves = new Map<string, string>()
   let settingsComponents: Array<{ destroy(): void }> = []
   const send = (payload: FrontendToBackendMessage) => ctx.sendToBackend(payload)
+  let ao3Draft = emptyAo3Information()
+  let ao3DraftChatId: string | null = null
+  let ao3SaveTimer: ReturnType<typeof setTimeout> | null = null
+  let ao3SaveRequestId = 0
+  type Ao3Save = { chatId: string; chatName: string; information: Ao3Information; requestId: number }
+  const ao3LocalDrafts = new Map<string, Ao3Save>()
+  const pendingAo3Saves = new Map<string, Ao3Save>()
+  const submittedAo3Saves = new Map<string, number>()
+  const ao3Status = shell.querySelector<HTMLElement>('[data-ao3-status]')!
+  const ao3Editor = mountAo3Editor(shell.querySelector<HTMLElement>('[data-ao3-editor]')!, (information) => {
+    if (!activeChat || ao3DraftChatId !== activeChat.id) return
+    ao3Draft = information
+    const pending = { chatId: activeChat.id, chatName: activeChat.name, information, requestId: ++ao3SaveRequestId }
+    ao3LocalDrafts.set(activeChat.id, pending)
+    pendingAo3Saves.set(activeChat.id, pending)
+    if (ao3SaveTimer) clearTimeout(ao3SaveTimer)
+    ao3SaveTimer = setTimeout(flushAo3Saves, 350)
+    ao3Status.textContent = information.enabled ? 'Included' : 'Off'
+    updateSummary()
+  })
+  ao3Editor.update(ao3Draft, true)
+
+  function flushAo3Saves(): void {
+    if (ao3SaveTimer) clearTimeout(ao3SaveTimer)
+    ao3SaveTimer = null
+    const pending = [...pendingAo3Saves.values()]
+    pendingAo3Saves.clear()
+    for (const save of pending) {
+      submittedAo3Saves.set(save.chatId, save.requestId)
+      send({ type: 'threadverse:save_ao3_information', ...save })
+    }
+  }
+
+  function activeAo3Information(): Ao3Information | undefined {
+    return ao3DraftChatId === activeChat?.id ? normalizeAo3Information(ao3Draft) : undefined
+  }
 
   function clearError(): void {
     contextError.textContent = ''
@@ -1757,6 +1837,7 @@ export function setup(ctx: SpindleFrontendContext) {
       hashRecentContext(text),
       hashRecentContext(installmentDraft),
       hashRecentContext(notes),
+      hashRecentContext(JSON.stringify(activeAo3Information())),
       settingsHash,
       continuityHash,
     ].join(':')
@@ -1782,6 +1863,7 @@ export function setup(ctx: SpindleFrontendContext) {
         text,
         installmentLabel: installmentDraft,
         fandomNotes: notes,
+        ao3Information: activeAo3Information(),
         settings: settingsDraft ? {
           ...settingsDraft,
           outgoingRegexScriptIds: [...settingsDraft.outgoingRegexScriptIds],
@@ -2322,6 +2404,7 @@ export function setup(ctx: SpindleFrontendContext) {
       chatId: activeChat.id,
       messageIds: selected.map((message) => message.id),
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
+      ao3Information: activeAo3Information(),
       installmentLabel: installmentDraft,
       instructionPresetId: settingsDraft
         && savedInstructionPresetIds.has(settingsDraft.activeInstructionPresetId)
@@ -2342,6 +2425,7 @@ export function setup(ctx: SpindleFrontendContext) {
       chatId: activeChat.id,
       roundId,
       fandomNotes: fandomNotesDraftChatId === activeChat.id ? fandomNotesDraft : undefined,
+      ao3Information: activeAo3Information(),
       instructionPresetId: settingsDraft
         && savedInstructionPresetIds.has(settingsDraft.activeInstructionPresetId)
         ? settingsDraft.activeInstructionPresetId
@@ -2565,6 +2649,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   const flushPendingAutomaticSave = () => {
+    flushAo3Saves()
     if (autoSaveTimer) flushAutomaticSave()
     if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
   }
@@ -2651,6 +2736,15 @@ export function setup(ctx: SpindleFrontendContext) {
         message.regexScripts,
         message.regexScriptsPermissionGranted,
       )
+      return
+    }
+
+    if (message.type === 'threadverse:ao3_information_save_result') {
+      if (submittedAo3Saves.get(message.chatId) !== message.requestId) return
+      submittedAo3Saves.delete(message.chatId)
+      const local = ao3LocalDrafts.get(message.chatId)
+      if (message.error && local?.requestId === message.requestId) pendingAo3Saves.set(message.chatId, local)
+      if (!message.error && activeChat?.id === message.chatId) requestActiveChat()
       return
     }
 
@@ -2768,6 +2862,7 @@ export function setup(ctx: SpindleFrontendContext) {
     if (message.type === 'threadverse:active_chat') {
       if (!shouldAcceptActiveChatResponse(message.requestId, latestChatRequestId)) return
       if (message.requestId === undefined) latestChatRequestId += 1
+      if (ao3DraftChatId !== message.chat?.id) flushAo3Saves()
       if (pendingFandomNotesSave && pendingFandomNotesSave.chatId !== message.chat?.id) {
         flushFandomNotesSave()
       }
@@ -2776,6 +2871,16 @@ export function setup(ctx: SpindleFrontendContext) {
       const previousChatId = activeChat?.id ?? null
       activeChat = message.chat
       const chatId = message.chat?.id ?? null
+      const serverAo3 = normalizeAo3Information(message.ao3Information)
+      const localAo3 = chatId ? ao3LocalDrafts.get(chatId) : undefined
+      if (
+        chatId && localAo3 && !pendingAo3Saves.has(chatId) && !submittedAo3Saves.has(chatId)
+        && JSON.stringify(localAo3.information) === JSON.stringify(serverAo3)
+      ) ao3LocalDrafts.delete(chatId)
+      ao3DraftChatId = chatId
+      ao3Draft = localAo3?.information ?? serverAo3
+      ao3Editor.update(ao3Draft, !activeChat)
+      ao3Status.textContent = ao3Draft.enabled ? 'Included' : 'Off'
       const pendingInstructionPresetId = chatId
         ? pendingChatInstructionPresets.get(chatId)
         : undefined
@@ -2838,6 +2943,8 @@ export function setup(ctx: SpindleFrontendContext) {
   loadActiveChat()
 
   return () => {
+    flushAo3Saves()
+    ao3Editor.destroy()
     if (autoSaveTimer) flushAutomaticSave()
     if (fandomNotesSaveTimer || pendingFandomNotesSave) flushFandomNotesSave()
     if (chatRefreshTimer) clearTimeout(chatRefreshTimer)

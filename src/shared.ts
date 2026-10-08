@@ -1,3 +1,5 @@
+import type { Ao3Information } from './ao3'
+
 export const DEFAULT_FEED_FONT_SCALE = 100
 export const MIN_FEED_FONT_SCALE = 100
 export const MAX_FEED_FONT_SCALE = 160
@@ -126,6 +128,7 @@ export type FrontendToBackendMessage =
       installmentLabel: string
       fandomNotes: string
       settings: ThreadverseSettingsPayload | null
+      ao3Information?: Ao3Information
     }
   | { type: 'threadverse:auto_save_settings'; settings: ThreadverseAutomaticSettings }
   | {
@@ -140,6 +143,7 @@ export type FrontendToBackendMessage =
       presetId: string
     }
   | { type: 'threadverse:save_fandom_notes'; chatId: string; chatName: string; notes: string }
+  | { type: 'threadverse:save_ao3_information'; chatId: string; chatName: string; information: Ao3Information; requestId: number }
   | { type: 'threadverse:request_instruction_preset_name'; existingNames: string[] }
   | {
       type: 'threadverse:request_instruction_preset_rename'
@@ -161,6 +165,7 @@ export type FrontendToBackendMessage =
       fandomNotes?: string
       installmentLabel?: string
       instructionPresetId?: string
+      ao3Information?: Ao3Information
     }
   | {
       type: 'threadverse:regenerate_thread'
@@ -168,6 +173,7 @@ export type FrontendToBackendMessage =
       roundId: string
       fandomNotes?: string
       instructionPresetId?: string
+      ao3Information?: Ao3Information
     }
   | { type: 'threadverse:select_feed_version'; chatId: string; roundId: string; versionId: string }
   | { type: 'threadverse:delete_feed_version'; chatId: string; roundId: string; versionId: string }
@@ -185,6 +191,7 @@ export type BackendToFrontendMessage =
       feedRounds: FeedRound[]
       fandomNotes: string
       instructionPresetId: string | null
+      ao3Information?: Ao3Information
       requestId?: number
       error?: string
       notice?: string
@@ -231,6 +238,7 @@ export type BackendToFrontendMessage =
       error?: string
     }
   | { type: 'threadverse:fandom_notes_save_result'; chatId: string; notes: string; error?: string }
+  | { type: 'threadverse:ao3_information_save_result'; chatId: string; requestId: number; error?: string }
   | {
       type: 'threadverse:instruction_editor_result'
       presetId: string
@@ -255,6 +263,7 @@ export function isFrontendMessage(value: unknown): value is FrontendToBackendMes
     || type === 'threadverse:save_prompt'
     || type === 'threadverse:set_chat_instruction_preset'
     || type === 'threadverse:save_fandom_notes'
+    || type === 'threadverse:save_ao3_information'
     || type === 'threadverse:request_instruction_preset_name'
     || type === 'threadverse:request_instruction_preset_rename'
     || type === 'threadverse:open_instruction_editor'

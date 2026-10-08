@@ -1,5 +1,6 @@
 import type { ThreadverseComment, ThreadverseFeed } from './shared'
 import type { ChatContinuity, StoredRound } from './state'
+import { normalizeAo3Information } from './ao3'
 
 export interface ForkMessageReference {
   id: string
@@ -133,6 +134,9 @@ export function inheritContinuityForFork(input: ForkInheritanceInput): ForkInher
       chatId: input.forkChatId,
       chatName: input.forkChatName || input.existing?.chatName || 'Untitled chat',
       fandomNotes: input.existing?.fandomNotes ?? input.source?.fandomNotes ?? '',
+      ...(input.existing?.ao3Information ?? input.source?.ao3Information
+        ? { ao3Information: normalizeAo3Information(input.existing?.ao3Information ?? input.source?.ao3Information) }
+        : {}),
       rounds,
       ...(input.existing?.instructionPresetId ?? input.source?.instructionPresetId
         ? { instructionPresetId: input.existing?.instructionPresetId ?? input.source?.instructionPresetId }

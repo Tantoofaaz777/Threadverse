@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.16.0
+
+- Add a collapsible AO3 work information form in Make, saved independently for each roleplay chat.
+- Use visual selection buttons for Rating, Archive Warnings, and Category, and optional text fields for Title, Summary, Fandom, Relationships, Characters, Additional Tags, and Language.
+- Include enabled, nonempty metadata under `# AO3 INFORMATIONS` in generation, regeneration, and full prompt token estimates while preserving the Reddit feed format.
+- Preserve the work information when disabled, when resetting continuity or deleting rounds, and when inheriting a fork.
+- Autosave edits and retain local drafts across chat switches and delayed backend refreshes.
+
 ## 1.15.0
 
 - Mark messages hidden in the main chat with an eye-off icon in the Make message picker while keeping them selectable for Threadverse generation.

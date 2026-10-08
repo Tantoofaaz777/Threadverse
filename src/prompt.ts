@@ -1,3 +1,5 @@
+import { serializeAo3Information, type Ao3Information } from './ao3'
+
 export interface StoryRange {
   label: string
   content: string
@@ -18,6 +20,7 @@ export interface ThreadversePromptInput {
   recentRange: StoryRange
   fandomContinuity: FandomThread[]
   fandomNotes?: string
+  ao3Information?: Ao3Information
   instructions: string
 }
 
@@ -101,12 +104,14 @@ export function installmentOrRoundLabel(installmentLabel: string, sequence: numb
 
 export function buildThreadversePrompt(input: ThreadversePromptInput): string {
   const fandomNotes = input.fandomNotes?.trim() ?? ''
+  const ao3Information = serializeAo3Information(input.ao3Information)
   return [
     ...(input.previousRanges.length > 0
       ? ['# PREVIOUS CONTEXT', renderBlocks(input.previousRanges)]
       : []),
     '# RECENT CONTEXT',
     renderBlocks([input.recentRange]),
+    ...(ao3Information ? ['# AO3 INFORMATIONS', ao3Information] : []),
     ...(input.fandomContinuity.length > 0
       ? ['# FANDOM CONTINUITY', renderBlocks(input.fandomContinuity)]
       : []),
