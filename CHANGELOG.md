@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.4
+
+- Use native hover tooltips for AO3 choices on devices with a hover-capable pointer. Keep the selected-option explanation below each group on touch-only devices, hiding it when the selection is empty.
+
 ## 1.16.3
 
 - Hide AO3 choice hints for empty selections and remove the click/tap instruction. When deselecting an option, explain a remaining selected option or hide the hint if the group is empty.

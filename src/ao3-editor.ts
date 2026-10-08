@@ -93,6 +93,7 @@ export function mountAo3Editor(
       button.dataset.ao3Choice = key
       button.dataset.value = value
       button.textContent = value
+      button.title = `${value}: ${description}`
       button.setAttribute('aria-label', value)
       button.setAttribute('aria-describedby', accessibleDescription.id)
       button.addEventListener('click', () => {

@@ -431,6 +431,9 @@ const STYLES = `
     margin: 7px 0 0; color: var(--lumiverse-text-muted);
     font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
   }
+  @media (any-hover: hover) {
+    .threadverse-ao3-choice-description { display: none; }
+  }
   .threadverse-ao3-choice {
     min-height: 32px; max-width: 100%; padding: 6px 9px;
     border: 1px solid var(--lumiverse-border); border-radius: var(--lumiverse-radius);
