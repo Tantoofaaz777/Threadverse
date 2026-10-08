@@ -39,20 +39,23 @@ let editorId = 0
 export function mountAo3Editor(
   target: HTMLElement,
   onChange: (information: Ao3Information) => void,
+  toggleTarget: HTMLElement,
 ) {
   const descriptionPrefix = `threadverse-ao3-description-${++editorId}`
   let information = emptyAo3Information()
   const root = document.createElement('div')
   root.className = 'threadverse-ao3-editor'
-  const toggleLabel = document.createElement('label')
-  toggleLabel.className = 'threadverse-filter-toggle'
-  const toggle = document.createElement('input')
-  toggle.type = 'checkbox'
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'threadverse-ao3-toggle'
+  toggle.setAttribute('role', 'switch')
+  toggle.setAttribute('aria-label', 'Include AO3 information in the prompt')
+  toggle.setAttribute('aria-checked', 'false')
   const track = document.createElement('span')
   track.className = 'threadverse-switch-track'
   track.setAttribute('aria-hidden', 'true')
-  toggleLabel.append(toggle, track, document.createTextNode('Include AO3 information in the prompt'))
-  root.appendChild(toggleLabel)
+  toggle.appendChild(track)
+  toggleTarget.appendChild(toggle)
 
   const choices: Array<{ button: HTMLButtonElement; key: 'rating' | 'archiveWarnings' | 'categories'; value: string }> = []
   const explanations: Array<{
@@ -134,13 +137,15 @@ export function mountAo3Editor(
     field.append(name, input)
     root.appendChild(field)
   }
-  toggle.addEventListener('change', () => {
-    information.enabled = toggle.checked
+  toggle.addEventListener('click', (event) => {
+    event.stopPropagation()
+    information.enabled = !information.enabled
+    sync()
     onChange(normalizeAo3Information(information))
   })
 
   function sync(): void {
-    toggle.checked = information.enabled
+    toggle.setAttribute('aria-checked', String(information.enabled))
     for (const { button, key, value } of choices) {
       const selected = key === 'rating' ? information.rating === value : (information[key] as string[]).includes(value)
       button.setAttribute('aria-pressed', String(selected))
@@ -169,6 +174,6 @@ export function mountAo3Editor(
       for (const input of inputs.values()) input.disabled = disabled
       sync()
     },
-    destroy() { root.remove() },
+    destroy() { root.remove(); toggle.remove() },
   }
 }

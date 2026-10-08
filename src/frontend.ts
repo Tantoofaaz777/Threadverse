@@ -242,17 +242,20 @@ const STYLES = `
     transition: transform .15s ease, background .15s ease;
   }
 
-  .threadverse-filter-toggle input:checked + .threadverse-switch-track {
+  .threadverse-filter-toggle input:checked + .threadverse-switch-track,
+  .threadverse-ao3-toggle[aria-checked="true"] .threadverse-switch-track {
     border-color: var(--lumiverse-success, #22c55e);
     background: var(--lumiverse-success-020, rgba(34, 197, 94, .2));
   }
 
-  .threadverse-filter-toggle input:checked + .threadverse-switch-track::after {
+  .threadverse-filter-toggle input:checked + .threadverse-switch-track::after,
+  .threadverse-ao3-toggle[aria-checked="true"] .threadverse-switch-track::after {
     transform: translateX(12px);
     background: var(--lumiverse-success, #22c55e);
   }
 
-  .threadverse-filter-toggle input:focus-visible + .threadverse-switch-track {
+  .threadverse-filter-toggle input:focus-visible + .threadverse-switch-track,
+  .threadverse-ao3-toggle:focus-visible .threadverse-switch-track {
     outline: 2px solid var(--lumiverse-accent);
     outline-offset: 2px;
   }
@@ -420,10 +423,17 @@ const STYLES = `
   }
   .threadverse-ao3 > summary, .threadverse-fandom-notes > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
   .threadverse-fandom-notes > .threadverse-settings-field { margin-top: 14px; }
-  .threadverse-ao3-status { float: right; color: var(--lumiverse-text-muted); font-size: 11px; font-weight: 400; }
+  .threadverse-ao3 { transition: opacity .15s ease; }
+  .threadverse-ao3.is-disabled { opacity: .6; }
+  .threadverse-ao3 > summary { line-height: 28px; }
+  .threadverse-ao3-toggle-slot { float: right; }
+  .threadverse-ao3-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 40px; min-height: 28px; padding: 0; border: 0;
+    background: transparent; cursor: pointer; vertical-align: top;
+  }
+  .threadverse-ao3-toggle:disabled { cursor: default; }
   .threadverse-ao3-editor { display: grid; gap: 14px; margin-top: 14px; }
-  .threadverse-ao3-editor > .threadverse-filter-toggle { justify-self: start; white-space: normal; }
-  .threadverse-ao3-editor .threadverse-switch-track { flex-shrink: 0; }
   .threadverse-ao3-choice-field { border: 0; margin: 0; padding: 0; min-width: 0; }
   .threadverse-ao3-choice-field > legend { margin-bottom: 7px; padding: 0; font-size: 11px; font-weight: 700; }
   .threadverse-ao3-choice-hint { margin-left: 8px; color: var(--lumiverse-text-muted); font-size: 10px; font-weight: 400; }
@@ -793,8 +803,8 @@ export function setup(ctx: SpindleFrontendContext) {
           </label>
           <div class="threadverse-context-error" data-context-error hidden></div>
         </div>
-        <details class="threadverse-ao3">
-          <summary>AO3 information <span class="threadverse-ao3-status" data-ao3-status>Off</span></summary>
+        <details class="threadverse-ao3 is-disabled">
+          <summary>AO3 information <span class="threadverse-ao3-toggle-slot" data-ao3-toggle></span></summary>
           <div data-ao3-editor></div>
         </details>
         <details class="threadverse-fandom-notes">
@@ -1033,7 +1043,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const ao3LocalDrafts = new Map<string, Ao3Save>()
   const pendingAo3Saves = new Map<string, Ao3Save>()
   const submittedAo3Saves = new Map<string, number>()
-  const ao3Status = shell.querySelector<HTMLElement>('[data-ao3-status]')!
+  const ao3Section = shell.querySelector<HTMLElement>('.threadverse-ao3')!
   const ao3Editor = mountAo3Editor(shell.querySelector<HTMLElement>('[data-ao3-editor]')!, (information) => {
     if (!activeChat || ao3DraftChatId !== activeChat.id) return
     ao3Draft = information
@@ -1042,9 +1052,9 @@ export function setup(ctx: SpindleFrontendContext) {
     pendingAo3Saves.set(activeChat.id, pending)
     if (ao3SaveTimer) clearTimeout(ao3SaveTimer)
     ao3SaveTimer = setTimeout(flushAo3Saves, 350)
-    ao3Status.textContent = information.enabled ? 'Included' : 'Off'
+    ao3Section.classList.toggle('is-disabled', !information.enabled)
     updateSummary()
-  })
+  }, shell.querySelector<HTMLElement>('[data-ao3-toggle]')!)
   ao3Editor.update(ao3Draft, true)
 
   function flushAo3Saves(): void {
@@ -2888,7 +2898,7 @@ export function setup(ctx: SpindleFrontendContext) {
       ao3DraftChatId = chatId
       ao3Draft = localAo3?.information ?? serverAo3
       ao3Editor.update(ao3Draft, !activeChat)
-      ao3Status.textContent = ao3Draft.enabled ? 'Included' : 'Off'
+      ao3Section.classList.toggle('is-disabled', !ao3Draft.enabled)
       const pendingInstructionPresetId = chatId
         ? pendingChatInstructionPresets.get(chatId)
         : undefined

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.7
+
+- Move the AO3 enable switch into the collapsible section header, replace the status text, remove its inline description, and dim the section when disabled.
+
 ## 1.16.6
 
 - Move Fandom Notes from Settings to a collapsible section in Make, alongside AO3 information, preserving per-chat autosave and the expanded editor.
