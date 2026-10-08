@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.6
+
+- Move Fandom Notes from Settings to a collapsible section in Make, alongside AO3 information, preserving per-chat autosave and the expanded editor.
+
 ## 1.16.5
 
 - Show only the description in AO3 hover tooltips, without repeating the option label.

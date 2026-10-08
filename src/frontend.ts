@@ -412,13 +412,14 @@ const STYLES = `
     color: var(--lumiverse-text-muted);
   }
 
-  .threadverse-ao3 {
+  .threadverse-ao3, .threadverse-fandom-notes {
     margin: 12px 0;
     padding: 10px;
     border: 1px solid var(--lumiverse-border);
     border-radius: var(--lumiverse-radius);
   }
-  .threadverse-ao3 > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+  .threadverse-ao3 > summary, .threadverse-fandom-notes > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+  .threadverse-fandom-notes > .threadverse-settings-field { margin-top: 14px; }
   .threadverse-ao3-status { float: right; color: var(--lumiverse-text-muted); font-size: 11px; font-weight: 400; }
   .threadverse-ao3-editor { display: grid; gap: 14px; margin-top: 14px; }
   .threadverse-ao3-editor > .threadverse-filter-toggle { justify-self: start; white-space: normal; }
@@ -796,6 +797,22 @@ export function setup(ctx: SpindleFrontendContext) {
           <summary>AO3 information <span class="threadverse-ao3-status" data-ao3-status>Off</span></summary>
           <div data-ao3-editor></div>
         </details>
+        <details class="threadverse-fandom-notes">
+          <summary>Fandom Notes</summary>
+          <div class="threadverse-settings-field">
+            <div class="threadverse-expandable-textarea">
+              <div data-setting="fandom-notes"></div>
+              <button class="threadverse-inline-expand" type="button" data-action="expand-fandom-notes" title="Expand editor" aria-label="Expand fandom notes editor">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </details>
         <div class="threadverse-toolbar">
           <input class="threadverse-search" type="search" placeholder="Search messages..." aria-label="Search messages" />
           <label class="threadverse-filter-toggle">
@@ -915,22 +932,6 @@ export function setup(ctx: SpindleFrontendContext) {
           </div>
         </section>
 
-        <section class="threadverse-card threadverse-settings-section">
-          <h3 class="threadverse-eyebrow">Fandom Notes</h3>
-          <div class="threadverse-settings-field">
-            <div class="threadverse-expandable-textarea">
-              <div data-setting="fandom-notes"></div>
-              <button class="threadverse-inline-expand" type="button" data-action="expand-fandom-notes" title="Expand editor" aria-label="Expand fandom notes editor">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <polyline points="15 3 21 3 21 9"></polyline>
-                  <polyline points="9 21 3 21 3 15"></polyline>
-                  <line x1="21" y1="3" x2="14" y2="10"></line>
-                  <line x1="3" y1="21" x2="10" y2="14"></line>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </section>
       </div>
     </section>
   `
